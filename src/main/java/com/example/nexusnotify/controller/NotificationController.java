@@ -1,4 +1,4 @@
 package com.example.nexusnotify.controller;
 
-public class Controller {
+public class NotificationController {
 }
