@@ -1,4 +1,10 @@
 package com.example.nexusnotify.infra.core;
 
-public class ProductCandidate {
-}
+import java.time.LocalDate;
+
+public record ProductCandidate(
+        Integer profileId,
+        Integer itemId,
+        String foodName,
+        LocalDate expiryDate
+) {}
