@@ -1,4 +1,6 @@
 package com.example.nexusnotify.domain;
 
-public class NotificationType {
+public enum NotificationType {
+    PRODUCT_EXPIRING,
+    UPCOMING_EVENT
 }
