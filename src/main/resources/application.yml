@@ -13,6 +13,11 @@ spring:
 server:
   port: ${NOTIFY_PORT:8082}
 
+app:
+  auth:
+    issuer: ${JWT_ISSUER:nexus-auth}
+    jwt-secret-base64: ${JWT_SECRET_BASE64}
+
 notify:
   core:
     base-url: ${CORE_BASE_URL:http://localhost:8080}

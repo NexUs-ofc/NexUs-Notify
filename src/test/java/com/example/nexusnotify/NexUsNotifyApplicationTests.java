@@ -1,5 +1,6 @@
 package com.example.nexusnotify;
 
+import com.example.nexusnotify.config.AuthProperties;
 import com.example.nexusnotify.config.CoreProperties;
 import com.example.nexusnotify.config.NotificationProperties;
 import com.example.nexusnotify.config.SchedulerProperties;
@@ -13,6 +14,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.mongodb.autoconfigure.MongoProperties;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.context.ApplicationContext;
+import org.springframework.security.oauth2.jwt.JwtDecoder;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import java.net.URI;
 import java.net.http.HttpClient;
@@ -34,7 +36,9 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
     "notify.core.token=notify-test-token",
     "notify.core.connect-timeout=2s",
     "notify.core.read-timeout=5s",
-    "notify.scheduler.enabled=false"
+    "notify.scheduler.enabled=false",
+    "app.auth.issuer=nexus-auth-test",
+    "app.auth.jwt-secret-base64=MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY="
 })
 class NexUsNotifyApplicationTests {
 
@@ -71,6 +75,12 @@ class NexUsNotifyApplicationTests {
     @Autowired
     private ApplicationContext context;
 
+    @Autowired
+    private AuthProperties authProperties;
+
+    @Autowired
+    private JwtDecoder jwtDecoder;
+
     @Test
     void contextLoads() {
     }
@@ -105,6 +115,12 @@ class NexUsNotifyApplicationTests {
         assertEquals("0 0 11 * * *", schedulerProperties.cron());
         assertFalse(schedulerProperties.enabled());
         assertEquals(0, context.getBeansOfType(NotificationScheduler.class).size());
+    }
+
+    @Test
+    void loadsAuthenticationSettingsAndRegistersTheDecoder() {
+        assertEquals("nexus-auth-test", authProperties.issuer());
+        assertNotNull(jwtDecoder);
     }
 
 }
