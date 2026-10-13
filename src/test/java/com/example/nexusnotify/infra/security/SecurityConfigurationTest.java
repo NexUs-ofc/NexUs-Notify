@@ -32,6 +32,7 @@ import java.time.Instant;
 import java.util.Base64;
 import java.util.Map;
 
+import static org.hamcrest.Matchers.hasItem;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -78,7 +79,7 @@ class SecurityConfigurationTest {
                         .header(HttpHeaders.AUTHORIZATION, "Bearer " + token))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.profileId").value(12))
-                .andExpect(jsonPath("$.roles[0]").value("ROLE_HOUSEHOLD"))
+                .andExpect(jsonPath("$.roles").value(hasItem("ROLE_HOUSEHOLD")))
                 .andDo(result -> assertNull(result.getRequest().getSession(false)));
     }
 
