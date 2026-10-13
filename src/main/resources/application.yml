@@ -1,0 +1,29 @@
+spring:
+  config:
+    import: optional:file:.env.properties
+  application:
+    name: NexUs-Notify
+  mongodb:
+    uri: ${MONGO_URI}
+    database: ${MONGO_DB}
+  data:
+    mongodb:
+      auto-index-creation: true
+
+server:
+  port: ${NOTIFY_PORT:8082}
+
+notify:
+  core:
+    base-url: ${CORE_BASE_URL:http://localhost:8080}
+    token: ${NOTIFY_CORE_TOKEN:}
+    connect-timeout: ${CORE_CONNECT_TIMEOUT:2s}
+    read-timeout: ${CORE_READ_TIMEOUT:5s}
+  notification:
+    product-days-before: [3, 1, 0]
+    event-days-before: [7, 3, 1, 0]
+    page-size: 100
+    zone-id: America/Sao_Paulo
+  scheduler:
+    enabled: ${NOTIFY_SCHEDULER_ENABLED:true}
+    cron: "${NOTIFY_SCHEDULER_CRON:0 0 11 * * *}"
