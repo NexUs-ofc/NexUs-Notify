@@ -2,12 +2,17 @@ package com.example.nexusnotify;
 
 import com.example.nexusnotify.config.CoreProperties;
 import com.example.nexusnotify.config.NotificationProperties;
+import com.example.nexusnotify.config.SchedulerProperties;
 import com.example.nexusnotify.infra.core.CoreClient;
+import com.example.nexusnotify.infra.scheduler.NotificationScheduler;
+import com.example.nexusnotify.service.NotificationGenerationService;
+import com.example.nexusnotify.service.NotificationWriter;
 import com.mongodb.client.MongoClient;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.mongodb.autoconfigure.MongoProperties;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.context.ApplicationContext;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import java.net.URI;
 import java.net.http.HttpClient;
@@ -17,6 +22,7 @@ import java.time.ZoneId;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 
 @SpringBootTest(properties = {
@@ -27,7 +33,8 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
     "notify.core.base-url=http://core.test",
     "notify.core.token=notify-test-token",
     "notify.core.connect-timeout=2s",
-    "notify.core.read-timeout=5s"
+    "notify.core.read-timeout=5s",
+    "notify.scheduler.enabled=false"
 })
 class NexUsNotifyApplicationTests {
 
@@ -51,6 +58,18 @@ class NexUsNotifyApplicationTests {
 
     @Autowired
     private Clock notificationClock;
+
+    @Autowired
+    private SchedulerProperties schedulerProperties;
+
+    @Autowired
+    private NotificationGenerationService generationService;
+
+    @Autowired
+    private NotificationWriter notificationWriter;
+
+    @Autowired
+    private ApplicationContext context;
 
     @Test
     void contextLoads() {
@@ -77,6 +96,15 @@ class NexUsNotifyApplicationTests {
         assertEquals(List.of(7, 3, 1, 0), notificationProperties.eventDaysBefore());
         assertEquals(100, notificationProperties.pageSize());
         assertEquals(ZoneId.of("America/Sao_Paulo"), notificationClock.getZone());
+    }
+
+    @Test
+    void registersGenerationAndDisablesTheJobDuringTests() {
+        assertNotNull(generationService);
+        assertNotNull(notificationWriter);
+        assertEquals("0 0 11 * * *", schedulerProperties.cron());
+        assertFalse(schedulerProperties.enabled());
+        assertEquals(0, context.getBeansOfType(NotificationScheduler.class).size());
     }
 
 }
