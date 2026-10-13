@@ -1,6 +1,7 @@
 package com.example.nexusnotify;
 
 import com.example.nexusnotify.config.CoreProperties;
+import com.example.nexusnotify.config.NotificationProperties;
 import com.example.nexusnotify.infra.core.CoreClient;
 import com.mongodb.client.MongoClient;
 import org.junit.jupiter.api.Test;
@@ -10,7 +11,10 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import java.net.URI;
 import java.net.http.HttpClient;
+import java.time.Clock;
 import java.time.Duration;
+import java.time.ZoneId;
+import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
@@ -42,6 +46,12 @@ class NexUsNotifyApplicationTests {
     @Autowired
     private CoreClient coreClient;
 
+    @Autowired
+    private NotificationProperties notificationProperties;
+
+    @Autowired
+    private Clock notificationClock;
+
     @Test
     void contextLoads() {
     }
@@ -59,6 +69,14 @@ class NexUsNotifyApplicationTests {
         assertEquals(Duration.ofSeconds(2), coreProperties.connectTimeout());
         assertEquals(Duration.ofSeconds(5), coreProperties.readTimeout());
         assertNotNull(coreClient);
+    }
+
+    @Test
+    void loadsNotificationRulesAndRegistersTheClock() {
+        assertEquals(List.of(3, 1, 0), notificationProperties.productDaysBefore());
+        assertEquals(List.of(7, 3, 1, 0), notificationProperties.eventDaysBefore());
+        assertEquals(100, notificationProperties.pageSize());
+        assertEquals(ZoneId.of("America/Sao_Paulo"), notificationClock.getZone());
     }
 
 }
