@@ -45,7 +45,7 @@ class NotificationSchedulerTest {
         scheduler.generate();
 
         verify(service).generate();
-        assertThat(output).contains("Geração de notificações concluída criadas=3");
+        assertThat(output).contains("Geração de notificações concluída criadas=3 duracao_ms=");
     }
 
     @Test
@@ -58,8 +58,8 @@ class NotificationSchedulerTest {
         assertDoesNotThrow(scheduler::generate);
 
         verify(service, times(2)).generate();
-        assertThat(output).contains("Falha na geração automática de notificações")
-                .contains("Geração de notificações concluída criadas=1");
+        assertThat(output).contains("Falha na geração automática de notificações duracao_ms=")
+                .contains("Geração de notificações concluída criadas=1 duracao_ms=");
     }
 
     @Test

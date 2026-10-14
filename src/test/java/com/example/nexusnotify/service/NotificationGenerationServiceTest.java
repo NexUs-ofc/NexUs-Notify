@@ -2,6 +2,7 @@ package com.example.nexusnotify.service;
 
 import com.example.nexusnotify.config.NotificationProperties;
 import com.example.nexusnotify.domain.Notification;
+import com.example.nexusnotify.domain.NotificationType;
 import com.example.nexusnotify.infra.core.CandidatePage;
 import com.example.nexusnotify.infra.core.CoreClient;
 import com.example.nexusnotify.infra.core.CoreIntegrationException;
@@ -9,16 +10,23 @@ import com.example.nexusnotify.infra.core.EventCandidate;
 import com.example.nexusnotify.infra.core.ProductCandidate;
 import com.example.nexusnotify.service.rule.ProductExpiryRule;
 import com.example.nexusnotify.service.rule.UpcomingEventRule;
+import io.micrometer.core.instrument.Counter;
+import io.micrometer.core.instrument.MockClock;
+import io.micrometer.core.instrument.simple.SimpleConfig;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import java.time.Clock;
+import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneId;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
+import java.util.concurrent.TimeUnit;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -37,16 +45,20 @@ class NotificationGenerationServiceTest {
     private CoreClient coreClient;
     private NotificationWriter writer;
     private NotificationGenerationService service;
+    private SimpleMeterRegistry metrics;
+    private MockClock metricsClock;
 
     @BeforeEach
     void setUp() {
         coreClient = mock(CoreClient.class);
         writer = mock(NotificationWriter.class);
+        metricsClock = new MockClock();
+        metrics = new SimpleMeterRegistry(SimpleConfig.DEFAULT, metricsClock);
         NotificationProperties properties = new NotificationProperties(
                 List.of(3, 1, 0), List.of(7, 3, 1, 0), 2, ZoneId.of("America/Sao_Paulo"));
         Clock clock = Clock.fixed(Instant.parse("2026-10-13T02:30:00Z"), properties.zoneId());
         service = new NotificationGenerationService(coreClient, writer,
-                new ProductExpiryRule(properties), new UpcomingEventRule(properties), properties, clock);
+                new ProductExpiryRule(properties), new UpcomingEventRule(properties), properties, clock, metrics);
 
         when(coreClient.products(any(), any(), anyInt(), anyInt())).thenReturn(new CandidatePage<>(List.of(), false));
         when(coreClient.events(any(), any(), anyInt(), anyInt())).thenReturn(new CandidatePage<>(List.of(), false));
@@ -69,6 +81,9 @@ class NotificationGenerationServiceTest {
         verify(coreClient).products(TODAY, TODAY.plusDays(3), 1, 2);
         verify(coreClient).events(TODAY, TODAY.plusDays(7), 1, 2);
         verify(writer, times(5)).saveIfAbsent(any());
+        assertEquals(2, count("notify.notifications.created", NotificationType.PRODUCT_EXPIRING));
+        assertEquals(3, count("notify.notifications.created", NotificationType.UPCOMING_EVENT));
+        assertEquals(1, metrics.get("notify.generation.duration").tag("result", "success").timer().count());
     }
 
     @Test
@@ -86,6 +101,9 @@ class NotificationGenerationServiceTest {
         assertEquals(0, service.generate());
 
         verify(writer, times(2)).saveIfAbsent(any());
+        assertEquals(1, count("notify.notifications.created", NotificationType.PRODUCT_EXPIRING));
+        assertEquals(1, count("notify.notifications.duplicates", NotificationType.PRODUCT_EXPIRING));
+        assertEquals(2, metrics.get("notify.generation.duration").tag("result", "success").timer().count());
     }
 
     @Test
@@ -100,6 +118,8 @@ class NotificationGenerationServiceTest {
         verify(coreClient, times(2)).events(TODAY, TODAY.plusDays(7), 0, 2);
         verify(writer, times(2)).saveIfAbsent(argThat(notification ->
                 "event:2026-10-12T19:30:days:0".equals(notification.getAlertKey())));
+        assertEquals(1, count("notify.notifications.created", NotificationType.UPCOMING_EVENT));
+        assertEquals(1, count("notify.notifications.duplicates", NotificationType.UPCOMING_EVENT));
     }
 
     @Test
@@ -110,6 +130,8 @@ class NotificationGenerationServiceTest {
 
         assertEquals(0, service.generate());
         verify(writer).saveIfAbsent(any());
+        assertEquals(0, count("notify.notifications.created", NotificationType.PRODUCT_EXPIRING));
+        assertEquals(1, count("notify.notifications.duplicates", NotificationType.PRODUCT_EXPIRING));
     }
 
     @Test
@@ -126,8 +148,14 @@ class NotificationGenerationServiceTest {
         });
 
         assertThrows(CoreIntegrationException.class, service::generate);
+        assertEquals(1, count("notify.notifications.created", NotificationType.PRODUCT_EXPIRING));
+        assertEquals(1, metrics.get("notify.generation.duration").tag("result", "failure").timer().count());
         assertEquals(1, service.generate());
         verify(writer, times(3)).saveIfAbsent(any());
+        assertEquals(1, count("notify.notifications.created", NotificationType.PRODUCT_EXPIRING));
+        assertEquals(1, count("notify.notifications.created", NotificationType.UPCOMING_EVENT));
+        assertEquals(1, count("notify.notifications.duplicates", NotificationType.PRODUCT_EXPIRING));
+        assertEquals(1, metrics.get("notify.generation.duration").tag("result", "success").timer().count());
     }
 
     @Test
@@ -138,6 +166,9 @@ class NotificationGenerationServiceTest {
         when(writer.saveIfAbsent(any())).thenThrow(exception);
 
         assertSame(exception, assertThrows(IllegalStateException.class, service::generate));
+        assertEquals(0, count("notify.notifications.created", NotificationType.PRODUCT_EXPIRING));
+        assertEquals(0, count("notify.notifications.duplicates", NotificationType.PRODUCT_EXPIRING));
+        assertEquals(1, metrics.get("notify.generation.duration").tag("result", "failure").timer().count());
     }
 
     @Test
@@ -147,12 +178,54 @@ class NotificationGenerationServiceTest {
 
         assertSame(exception, assertThrows(CoreIntegrationException.class, service::generate));
         verifyNoInteractions(writer);
+        assertEquals(1, metrics.get("notify.generation.duration").tag("result", "failure").timer().count());
+        assertEquals(0, metrics.get("notify.generation.duration").tag("result", "success").timer().count());
     }
 
     @Test
     void returnsZeroWhenBothQueriesAreEmpty() {
         assertEquals(0, service.generate());
         verifyNoInteractions(writer);
+        assertEquals(1, metrics.get("notify.generation.duration").tag("result", "success").timer().count());
+        assertEquals(0, metrics.get("notify.generation.duration").tag("result", "failure").timer().count());
+    }
+
+    @Test
+    void measuresTimeSpentQueryingAndSavingWithoutTagsForUserData() {
+        when(coreClient.products(TODAY, TODAY.plusDays(3), 0, 2)).thenAnswer(invocation -> {
+            metricsClock.add(Duration.ofSeconds(2));
+            return new CandidatePage<>(List.of(product(45, 3)), false);
+        });
+        when(writer.saveIfAbsent(any())).thenAnswer(invocation -> {
+            metricsClock.add(Duration.ofSeconds(1));
+            return true;
+        });
+
+        assertEquals(1, service.generate());
+
+        assertEquals(3, metrics.get("notify.generation.duration").tag("result", "success")
+                .timer().totalTime(TimeUnit.SECONDS));
+        assertThat(metrics.getMeters()).allSatisfy(meter -> assertThat(meter.getId().getTags())
+                .allSatisfy(tag -> assertThat(tag.getKey()).isIn("type", "result")));
+    }
+
+    @Test
+    void recordsTheDurationOfAFailedExecution() {
+        when(coreClient.products(any(), any(), anyInt(), anyInt())).thenAnswer(invocation -> {
+            metricsClock.add(Duration.ofSeconds(4));
+            throw new CoreIntegrationException("unavailable");
+        });
+
+        assertThrows(CoreIntegrationException.class, service::generate);
+
+        assertEquals(4, metrics.get("notify.generation.duration").tag("result", "failure")
+                .timer().totalTime(TimeUnit.SECONDS));
+        assertEquals(0, metrics.get("notify.generation.duration").tag("result", "success").timer().count());
+    }
+
+    private double count(String name, NotificationType type) {
+        Counter counter = metrics.find(name).tag("type", type.name()).counter();
+        return counter == null ? 0 : counter.count();
     }
 
     private ProductCandidate product(int id, int daysBefore) {
