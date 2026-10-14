@@ -13,6 +13,19 @@ spring:
 server:
   port: ${NOTIFY_PORT:8082}
 
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,metrics
+  endpoint:
+    health:
+      show-details: never
+      show-components: never
+  metrics:
+    tags:
+      application: ${spring.application.name}
+
 app:
   auth:
     issuer: ${JWT_ISSUER:nexus-auth}
