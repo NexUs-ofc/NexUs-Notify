@@ -37,6 +37,7 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
     "notify.core.connect-timeout=2s",
     "notify.core.read-timeout=5s",
     "notify.scheduler.enabled=false",
+    "notify.push.enabled=false",
     "app.auth.issuer=nexus-auth-test",
     "app.auth.jwt-secret-base64=MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY="
 })
