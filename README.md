@@ -14,7 +14,7 @@ Copy-Item .env.example .env.properties
 
 Preencha `MONGO_URI` e `MONGO_DB` com a base que contém a collection `notifications`, gerenciada pelo NexUs-DB. Configure `NOTIFY_CORE_TOKEN` com o mesmo token da integração no Core e `JWT_SECRET_BASE64` com a mesma chave usada pelo Auth e pelo Core. A chave JWT deve representar pelo menos 32 bytes após a decodificação Base64.
 
-O arquivo `.env.properties` é carregado da raiz do projeto e está no `.gitignore`. No ambiente de execução, os mesmos valores podem ser fornecidos por variáveis de ambiente.
+Os arquivos `.env` e `.env.properties` são carregados da raiz do projeto e estão no `.gitignore`. Ambos usam o formato `CHAVE=VALOR`, sem aspas envolvendo os valores. Se os dois existirem, `.env.properties` tem prioridade. Variáveis de ambiente do processo têm prioridade sobre esses arquivos.
 
 ```powershell
 .\mvnw.cmd spring-boot:run
@@ -42,8 +42,46 @@ Em Linux ou macOS:
 | `CORS_ALLOWED_ORIGINS` | Vazio | Origens de navegador permitidas, separadas por vírgula. |
 | `NOTIFY_SCHEDULER_ENABLED` | `true` | Habilita a geração automática. |
 | `NOTIFY_SCHEDULER_CRON` | `0 0 11 * * *` | Horário de execução, com seis campos. |
+| `NOTIFY_PUSH_ENABLED` | `false` | Inicializa o Firebase Admin quando `true`. |
+| `FIREBASE_PROJECT_ID` | Vazio | ID do projeto Firebase; obrigatório quando o push estiver habilitado. |
+| `FIREBASE_CREDENTIALS_BASE64` | Vazio | JSON da conta de serviço codificado em Base64; obrigatório quando o push estiver habilitado. |
 
 O tamanho do lote de consulta ao Core é 100. O fuso e as antecedências estão em `application.yml`, em `notify.notification`.
+
+## Configuração do Firebase para push
+
+A API usa o Firebase Admin SDK Java. Com `NOTIFY_PUSH_ENABLED=false`, não inicializa o Firebase e não exige suas credenciais. Com `true`, registra uma instância `nexus-notify` e um cliente `FirebaseMessaging`, liberando a instância ao encerrar a aplicação.
+
+Use o JSON privado da conta de serviço com o papel **Firebase Cloud Messaging API Admin**, no mesmo projeto configurado em `FIREBASE_PROJECT_ID`. A inicialização rejeita configurações incompletas, Base64 inválido, credenciais inválidas e projeto divergente, sem incluir o conteúdo da credencial nos erros de leitura. O `google-services.json` do Android é uma configuração do mobile e não serve como credencial do servidor.
+
+### Preparar a credencial
+
+Mantenha o JSON fora do repositório e do JAR. No PowerShell, substitua o caminho abaixo pelo caminho real do arquivo baixado:
+
+```powershell
+$taskFirebaseKeyPath = 'C:\caminho\credencial-notify.json'
+[Convert]::ToBase64String([IO.File]::ReadAllBytes($taskFirebaseKeyPath)) | Set-Clipboard
+```
+
+O valor fica na área de transferência. Base64 apenas permite armazenar o JSON em uma linha; o resultado continua sendo um segredo. Acrescente estas linhas ao `.env.properties` local, substituindo os exemplos pelos valores do seu projeto:
+
+```properties
+NOTIFY_PUSH_ENABLED=true
+FIREBASE_PROJECT_ID=seu-projeto-firebase
+FIREBASE_CREDENTIALS_BASE64=COLE_O_VALOR_COPIADO
+```
+
+### Publicar no Discloud
+
+Ao implantar pela integração com GitHub, cadastre as três variáveis na seção **Variáveis de Ambiente** do Discloud. A plataforma gera o `.env` na raiz da aplicação, que o Notify carrega como arquivo de propriedades. Para upload manual, forneça o `.env` na raiz do pacote de implantação privado, ao lado do JAR e do `discloud.config`, sem incluí-lo no Git ou no JAR. Preserve também as configurações de MongoDB, Auth e Core já exigidas pela API.
+
+Referências: [Firebase Admin SDK](https://firebase.google.com/docs/admin/setup) e [variáveis na integração GitHub do Discloud](https://docs.discloud.com/en/api-and-integrations/github-integration).
+
+### Limites desta etapa e integração futura com o mobile
+
+Inicializar o SDK verifica localmente a credencial e o projeto; não faz uma chamada remota para confirmar se a chave foi revogada, se o papel IAM permite enviar ou se a API FCM V1 está habilitada. O health atual também não valida o Firebase. Essas verificações exigem um teste real quando o envio estiver implementado.
+
+Esta etapa prepara o cliente Firebase. O cadastro de instalações, os endpoints correspondentes e o processamento dos envios serão implementados depois. O mobile precisará registrar sua instalação no FCM, enviar o FID com o JWT do perfil, atualizar esse cadastro e desvinculá-lo no logout. Nenhum contrato novo para o mobile é exposto nesta etapa.
 
 ## Regras e agendamento
 
@@ -56,7 +94,7 @@ O job executa diariamente às 11h no fuso `America/Sao_Paulo`. Percorre as pági
 
 O índice único de perfil, tipo, origem e chave do alerta protege a persistência contra duplicações. Cada antecedência tem sua própria chave. O agendamento precisa do serviço em execução; gerações perdidas durante uma indisponibilidade ainda não são recuperadas automaticamente.
 
-O envio de push ao celular será implementado em uma task própria. Atualmente os avisos ficam disponíveis para consulta no aplicativo.
+O cliente Firebase pode ser configurado conforme a seção acima. O envio dos avisos às instalações ainda será implementado em uma task própria. Atualmente os avisos ficam disponíveis para consulta no aplicativo.
 
 ## Endpoints do aplicativo
 

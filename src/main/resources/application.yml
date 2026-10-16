@@ -1,6 +1,8 @@
 spring:
   config:
-    import: optional:file:.env.properties
+    import:
+      - optional:file:.env[.properties]
+      - optional:file:.env.properties
   application:
     name: NexUs-Notify
   mongodb:
@@ -32,6 +34,10 @@ app:
     jwt-secret-base64: ${JWT_SECRET_BASE64}
 
 notify:
+  push:
+    enabled: ${NOTIFY_PUSH_ENABLED:false}
+    project-id: ${FIREBASE_PROJECT_ID:}
+    credentials-base64: ${FIREBASE_CREDENTIALS_BASE64:}
   core:
     base-url: ${CORE_BASE_URL:http://localhost:8080}
     token: ${NOTIFY_CORE_TOKEN:}
