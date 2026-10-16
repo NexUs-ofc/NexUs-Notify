@@ -27,6 +27,12 @@ management:
     web:
       exposure:
         include: health,metrics
+  # O indicador padrao percorre TODOS os bancos (incluindo o "local") e o Atlas
+  # bloqueia comandos no "local" mesmo para atlasAdmin. Desliga ele e usa o
+  # AppMongoHealthIndicator, que consulta apenas o banco da aplicacao.
+  health:
+    mongodb:
+      enabled: false
   metrics:
     tags:
       application: ${spring.application.name}
