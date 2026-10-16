@@ -35,3 +35,7 @@ build/
 ### Project
 .env
 .env.properties
+.DS_Store
+# Discloud deploy artifacts (gerados localmente, não commitar)
+app.jar
+*.zip
