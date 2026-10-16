@@ -62,6 +62,9 @@ class FirebaseConfigurationTest {
             registered.set(app);
             assertThat(app.getName()).isEqualTo("nexus-notify");
             assertThat(app.getOptions().getProjectId()).isEqualTo(PROJECT_ID);
+            assertThat(app.getOptions().getConnectTimeout()).isEqualTo(5_000);
+            assertThat(app.getOptions().getReadTimeout()).isEqualTo(10_000);
+            assertThat(app.getOptions().getWriteTimeout()).isEqualTo(10_000);
             assertThat(context.getBean(FirebaseMessaging.class)).isSameAs(FirebaseMessaging.getInstance(app));
             assertThat(FirebaseApp.getApps()).contains(app);
         });

@@ -35,6 +35,9 @@ public class FirebaseConfiguration {
         FirebaseOptions options = FirebaseOptions.builder()
                 .setCredentials(credentials)
                 .setProjectId(projectId)
+                .setConnectTimeout(5_000)
+                .setReadTimeout(10_000)
+                .setWriteTimeout(10_000)
                 .build();
         return FirebaseApp.initializeApp(options, "nexus-notify");
     }

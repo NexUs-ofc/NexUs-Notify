@@ -1,6 +1,6 @@
 # NexUs-Notify
 
-API de notificações do NexUs. Consulta candidatos no Core, aplica as regras de produtos e eventos e salva os avisos no MongoDB. O mobile consulta o histórico e registra a leitura pela API.
+API de notificações do NexUs. Consulta candidatos no Core, aplica as regras de produtos e eventos e salva os avisos no MongoDB. Com o push habilitado, tenta enviar os novos avisos pelo Firebase para as instalações ativas do perfil. O mobile consulta o histórico e registra a leitura pela API.
 
 ## Execução local
 
@@ -12,7 +12,7 @@ Para a primeira configuração, copie o modelo na raiz do projeto. Se você já 
 Copy-Item .env.example .env.properties
 ```
 
-Preencha `MONGO_URI` e `MONGO_DB` com a base das collections `notifications` e `push_installations`. O provisionamento das collections e dos índices pertence ao NexUs-DB: aplique o script `script/mongo/V1__notify_collections_and_indexes.js` desse repositório antes de publicar a API. A criação automática de índices no Notify está desabilitada. Configure `NOTIFY_CORE_TOKEN` com o mesmo token da integração no Core e `JWT_SECRET_BASE64` com a mesma chave usada pelo Auth e pelo Core. A chave JWT deve representar pelo menos 32 bytes após a decodificação Base64.
+Preencha `MONGO_URI` e `MONGO_DB` com a base das collections `notifications` e `push_installations`. Prepare as collections e os índices previamente pelo `mongosh`, conforme [Cadastro de instalações push](docs/push-installations.md). A criação automática de índices no Notify está desabilitada. Configure `NOTIFY_CORE_TOKEN` com o mesmo token da integração no Core e `JWT_SECRET_BASE64` com a mesma chave usada pelo Auth e pelo Core. A chave JWT deve representar pelo menos 32 bytes após a decodificação Base64.
 
 Os arquivos `.env` e `.env.properties` são carregados da raiz do projeto e estão no `.gitignore`. Ambos usam o formato `CHAVE=VALOR`, sem aspas envolvendo os valores. Se os dois existirem, `.env.properties` tem prioridade. Variáveis de ambiente do processo têm prioridade sobre esses arquivos.
 
@@ -31,7 +31,7 @@ Em Linux ou macOS:
 | Variável | Padrão | Uso |
 | --- | --- | --- |
 | `MONGO_URI` | Obrigatória | Conexão com o MongoDB. |
-| `MONGO_DB` | Obrigatória | Nome da base com a collection `notifications`. |
+| `MONGO_DB` | Obrigatória | Nome da base com as collections `notifications` e `push_installations`. |
 | `NOTIFY_PORT` | `8082` | Porta HTTP. |
 | `CORE_BASE_URL` | `http://localhost:8080` | Endereço do Core. |
 | `NOTIFY_CORE_TOKEN` | Vazio | Token enviado no header `X-Notify-Token` nas consultas ao Core. |
@@ -42,7 +42,7 @@ Em Linux ou macOS:
 | `CORS_ALLOWED_ORIGINS` | Vazio | Origens de navegador permitidas, separadas por vírgula. |
 | `NOTIFY_SCHEDULER_ENABLED` | `true` | Habilita a geração automática. |
 | `NOTIFY_SCHEDULER_CRON` | `0 0 11 * * *` | Horário de execução, com seis campos. |
-| `NOTIFY_PUSH_ENABLED` | `false` | Inicializa o Firebase Admin quando `true`. |
+| `NOTIFY_PUSH_ENABLED` | `false` | Inicializa o Firebase Admin e habilita o envio dos novos avisos quando `true`. |
 | `FIREBASE_PROJECT_ID` | Vazio | ID do projeto Firebase; obrigatório quando o push estiver habilitado. |
 | `FIREBASE_CREDENTIALS_BASE64` | Vazio | JSON da conta de serviço codificado em Base64; obrigatório quando o push estiver habilitado. |
 
@@ -81,7 +81,7 @@ Referências: [Firebase Admin SDK](https://firebase.google.com/docs/admin/setup)
 
 Inicializar o SDK verifica localmente a credencial e o projeto; não faz uma chamada remota para confirmar se a chave foi revogada, se o papel IAM permite enviar ou se a API FCM V1 está habilitada. O health atual também não valida o Firebase. Essas verificações exigem um teste real quando o envio estiver implementado.
 
-O cliente Firebase está preparado e o cadastro de instalações está disponível pelos endpoints descritos abaixo. O processamento dos envios será implementado depois. O contrato para a integração futura do mobile está em [Cadastro de instalações push](docs/push-installations.md).
+Após salvar um aviso novo, a API busca as instalações ativas do perfil, confere o vínculo atual e tenta enviar uma mensagem de dados pelo FID. Falhas de envio não removem o aviso do histórico nem interrompem os outros destinatários. Não há fila persistida nem recuperação de envios após falhas ou reinícios. O fluxo, os erros tratados e o contrato Android estão em [Envio de push](docs/push-delivery.md).
 
 ## Regras e agendamento
 
@@ -94,7 +94,7 @@ O job executa diariamente às 11h no fuso `America/Sao_Paulo`. Percorre as pági
 
 O índice único de perfil, tipo, origem e chave do alerta protege a persistência contra duplicações. Cada antecedência tem sua própria chave. O agendamento precisa do serviço em execução; gerações perdidas durante uma indisponibilidade ainda não são recuperadas automaticamente.
 
-O cliente Firebase pode ser configurado conforme a seção acima. O envio dos avisos às instalações ainda será implementado em uma task própria. Atualmente os avisos ficam disponíveis para consulta no aplicativo.
+O envio é síncrono durante a geração, somente para avisos recém-inseridos e quando `NOTIFY_PUSH_ENABLED=true`. Repetir a geração não reenvia avisos já existentes, mesmo que uma tentativa anterior tenha falhado. Sem instalações ativas, o aviso permanece apenas no histórico. O Android ainda precisa implementar o recebimento e a exibição das mensagens de dados.
 
 ## Endpoints do aplicativo
 

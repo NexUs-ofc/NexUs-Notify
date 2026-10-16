@@ -21,6 +21,7 @@ public class NotificationGenerationService {
 
     private final CoreClient coreClient;
     private final NotificationWriter writer;
+    private final PushDispatchService pushDispatch;
     private final ProductExpiryRule productRule;
     private final UpcomingEventRule eventRule;
     private final NotificationProperties properties;
@@ -29,11 +30,18 @@ public class NotificationGenerationService {
     private final Timer successTimer;
     private final Timer failureTimer;
 
-    public NotificationGenerationService(CoreClient coreClient, NotificationWriter writer,
-                                         ProductExpiryRule productRule, UpcomingEventRule eventRule,
-                                         NotificationProperties properties, Clock clock, MeterRegistry metrics) {
+    public NotificationGenerationService(
+            CoreClient coreClient,
+            NotificationWriter writer,
+            ProductExpiryRule productRule,
+            UpcomingEventRule eventRule,
+            NotificationProperties properties,
+            Clock clock,
+            MeterRegistry metrics,
+            PushDispatchService pushDispatch) {
         this.coreClient = coreClient;
         this.writer = writer;
+        this.pushDispatch = pushDispatch;
         this.productRule = productRule;
         this.eventRule = eventRule;
         this.properties = properties;
@@ -97,10 +105,17 @@ public class NotificationGenerationService {
         if (result.isEmpty()) {
             return 0;
         }
+
         Notification notification = result.get();
         boolean created = writer.saveIfAbsent(notification);
         String metric = created ? "notify.notifications.created" : "notify.notifications.duplicates";
+
         metrics.counter(metric, "type", notification.getType().name()).increment();
+
+        if (created) {
+            pushDispatch.send(notification);
+        }
+
         return created ? 1 : 0;
     }
 }
