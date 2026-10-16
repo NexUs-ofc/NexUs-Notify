@@ -11,6 +11,7 @@ import org.springframework.data.mongodb.core.query.Query;
 import org.springframework.data.mongodb.core.query.Update;
 import org.springframework.stereotype.Repository;
 import java.time.Instant;
+import java.util.List;
 
 @Repository
 public class PushInstallationRepository {
@@ -33,19 +34,30 @@ public class PushInstallationRepository {
                 .set("disabledReason", null);
         PushInstallation installation;
         try {
-            installation = template.findAndModify(query, update,
-                    FindAndModifyOptions.options().upsert(true).returnNew(true), PushInstallation.class);
+            installation = template.findAndModify(
+                    query,
+                    update,
+                    FindAndModifyOptions.options().upsert(true).returnNew(true),
+                    PushInstallation.class
+            );
         } catch (DuplicateKeyException exception) {
             // Outro cadastro pode ter criado o mesmo FID entre o inicio do upsert e a insercao.
-            installation = template.findAndModify(query, update,
-                    FindAndModifyOptions.options().returnNew(true), PushInstallation.class);
+            installation = template.findAndModify(
+                    query,
+                    update,
+                    FindAndModifyOptions.options().returnNew(true),
+                    PushInstallation.class
+            );
+
             if (installation == null) {
                 throw exception;
             }
         }
+
         if (installation == null) {
             throw new IllegalStateException("Nao foi possivel cadastrar a instalacao de push");
         }
+
         return installation;
     }
 
@@ -57,6 +69,41 @@ public class PushInstallationRepository {
                 .set("updatedAt", now)
                 .set("disabledAt", now)
                 .set("disabledReason", "LOGOUT");
+
         template.updateFirst(query, update, PushInstallation.class);
+    }
+
+    public List<PushInstallation> findActiveByProfileId(Integer profileId) {
+        Query query = Query.query(
+                Criteria.where("profileId").is(profileId)
+                        .and("status").is(PushInstallationStatus.ACTIVE)
+        );
+
+        return template.find(query, PushInstallation.class);
+    }
+
+    public boolean isCurrentActive(PushInstallation installation) {
+        return template.exists(activeSnapshot(installation), PushInstallation.class);
+    }
+
+    public boolean markInvalid(PushInstallation installation, Instant now) {
+        Update update = new Update()
+                .set("status", PushInstallationStatus.INVALID)
+                .set("updatedAt", now)
+                .set("disabledAt", now)
+                .set("disabledReason", "FCM_UNREGISTERED");
+
+        return template.updateFirst(activeSnapshot(installation), update, PushInstallation.class)
+                .getModifiedCount() > 0;
+    }
+
+    private Query activeSnapshot(PushInstallation installation) {
+        return Query.query(
+                Criteria.where("id").is(installation.id())
+                        .and("installationId").is(installation.installationId())
+                        .and("profileId").is(installation.profileId())
+                        .and("status").is(PushInstallationStatus.ACTIVE)
+                        .and("updatedAt").is(installation.updatedAt())
+        );
     }
 }

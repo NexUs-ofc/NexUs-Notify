@@ -16,16 +16,39 @@ Este contrato associa uma instalação Android ao perfil autenticado. O Notify p
 | `disabled_at` | Date ou null | Data de desativação; null no cadastro ativo. |
 | `disabled_reason` | String ou null | Nesta etapa, `LOGOUT` após desvinculação e null após cadastro. |
 
-O campo `platform` não é utilizado. Datas e estados são definidos pelo servidor. `last_seen_at` não comprova que o aplicativo continua instalado. Esta etapa grava `ACTIVE` e `REVOKED`; `INVALID` e `STALE` estão reservados para o futuro tratamento de falhas do FCM e de inatividade. Ainda não existe limpeza automática de instalações antigas.
+O campo `platform` não é utilizado. Datas e estados são definidos pelo servidor. `last_seen_at` não comprova que o aplicativo continua instalado. O cadastro e o logout gravam `ACTIVE` e `REVOKED`. O envio grava `INVALID` quando o Firebase retorna `UNREGISTERED`, com motivo `FCM_UNREGISTERED`; nesse caso o perfil é preservado. `STALE` está reservado para uma política futura de inatividade. Ainda não existe limpeza automática de instalações antigas.
 
-O provisionamento pertence ao **NexUs-DB**, no script `script/mongo/V1__notify_collections_and_indexes.js`. O Notify não declara esses índices na entidade e está com `auto-index-creation=false`. Aplique o script na base usada pela API antes de publicar esta entrega. O índice único é necessário para impedir cadastros duplicados durante requisições concorrentes.
+Prepare os índices diretamente pelo `mongosh`, na base configurada em `MONGO_DB`. O Notify não declara esses índices na entidade e está com `auto-index-creation=false`. O índice único é necessário para impedir cadastros duplicados durante requisições concorrentes.
 
 | Índice exigido | Campos | Único |
 | --- | --- | --- |
 | `uq_push_installation_id` | `installation_id` crescente | Sim. |
 | `idx_push_installation_profile_status` | `profile_id` e `status` crescentes | Não. |
 
-O mesmo script mantém os dois índices de `notifications`, anteriormente declarados pela API, com seus nomes e definições existentes. Ele cria collections ausentes e garante os índices sem inserir documentos fictícios ou apagar dados. Se o NexUs-DB aplicar validação à collection, o esquema deve permitir `profile_id=null` e os campos de desativação nulos. Os endpoints não armazenam a credencial privada do Firebase.
+Os comandos abaixo criam as collections ausentes e os índices, sem inserir documentos fictícios ou apagar dados. Mantêm também os nomes e definições dos índices de `notifications`, anteriormente declarados na API. Se já existirem com as mesmas definições, não são recriados. Duplicações existentes ou definições conflitantes causam erro e precisam ser verificadas antes de prosseguir.
+
+```javascript
+db = db.getSiblingDB("NOME_DA_BASE_CONFIGURADA_EM_MONGO_DB");
+
+db.push_installations.createIndex(
+  { installation_id: 1 },
+  { name: "uq_push_installation_id", unique: true }
+);
+db.push_installations.createIndex(
+  { profile_id: 1, status: 1 },
+  { name: "idx_push_installation_profile_status" }
+);
+db.notifications.createIndex(
+  { profile_id: 1, type: 1, source_id: 1, alert_key: 1 },
+  { name: "uq_notification_alert", unique: true }
+);
+db.notifications.createIndex(
+  { profile_id: 1, created_at: -1 },
+  { name: "idx_notification_profile_created" }
+);
+```
+
+Se houver validação de documentos na collection, o esquema deve permitir `profile_id=null`, os campos de desativação nulos e os estados `ACTIVE`, `REVOKED`, `INVALID` e `STALE`. Os endpoints não armazenam a credencial privada do Firebase.
 
 ## Cadastrar ou sincronizar
 
@@ -88,7 +111,7 @@ Use um ambiente de teste com MongoDB e JWTs válidos do Auth. Pode manter `NOTIF
 9. Repita o PUT com B. Confira mesmo ID e criação, estado ativo e dados de desativação nulos.
 10. Teste corpo inválido e ausência de autenticação, conforme a tabela de erros.
 
-Os testes automatizados verificam o contrato HTTP com JWT, validação, mapeamento BSON, ausência de índices declarados nas entidades, filtros de propriedade, opções de atualização atômica e recuperação de uma colisão simulada de inserção. O driver MongoDB é simulado; aplique o script do NexUs-DB e use o roteiro acima para conferir o comportamento no banco real.
+Os testes automatizados verificam o contrato HTTP com JWT, validação, mapeamento BSON, ausência de índices declarados nas entidades, filtros de propriedade, opções de atualização atômica e recuperação de uma colisão simulada de inserção. O driver MongoDB é simulado; prepare os índices e use o roteiro acima para conferir o comportamento no banco real.
 
 ## Integração Android futura
 
@@ -96,6 +119,6 @@ O mobile só deve cadastrar quando tiver FID registrado no FCM e uma sessão aut
 
 No logout, deve chamar o DELETE antes de descartar o JWT. Uma falha de rede não confirma a desvinculação remota. O cliente deve cancelar sincronizações de cadastro da sessão antiga para evitar reativá-la depois do logout ou da troca de usuário.
 
-Quando o FID mudar, o novo cadastro não identifica automaticamente qual instalação antiga foi substituída. O tratamento do registro antigo dependerá das respostas do FCM e da política de inatividade, em uma etapa posterior.
+Quando o FID mudar, o novo cadastro não identifica automaticamente qual instalação antiga foi substituída. O registro antigo pode ser invalidado se um envio retornar `UNREGISTERED`; a expiração por inatividade continua sendo uma etapa futura.
 
-O envio de notificações também será uma etapa posterior: buscará os cadastros ativos do perfil e conferirá o vínculo atual antes da tentativa de envio, para não usar pendências antigas de outro perfil. Esta entrega não altera o mobile nem envia mensagens.
+O envio busca os cadastros ativos do perfil e confere o vínculo atual antes de cada tentativa. Essa conferência não cancela mensagens já em trânsito: o Android deve conferir `profileId` contra a sessão atual antes de exibir o conteúdo. O contrato e os limites estão em [Envio de push](push-delivery.md). A implementação Android continua pendente.

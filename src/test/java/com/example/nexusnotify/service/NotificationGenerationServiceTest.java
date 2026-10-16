@@ -16,6 +16,7 @@ import io.micrometer.core.instrument.simple.SimpleConfig;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.mockito.InOrder;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
@@ -33,6 +34,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.argThat;
+import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
@@ -44,6 +46,7 @@ class NotificationGenerationServiceTest {
     private static final LocalDate TODAY = LocalDate.of(2026, 10, 12);
     private CoreClient coreClient;
     private NotificationWriter writer;
+    private PushDispatchService pushDispatch;
     private NotificationGenerationService service;
     private SimpleMeterRegistry metrics;
     private MockClock metricsClock;
@@ -52,13 +55,22 @@ class NotificationGenerationServiceTest {
     void setUp() {
         coreClient = mock(CoreClient.class);
         writer = mock(NotificationWriter.class);
+        pushDispatch = mock(PushDispatchService.class);
         metricsClock = new MockClock();
         metrics = new SimpleMeterRegistry(SimpleConfig.DEFAULT, metricsClock);
         NotificationProperties properties = new NotificationProperties(
                 List.of(3, 1, 0), List.of(7, 3, 1, 0), 2, ZoneId.of("America/Sao_Paulo"));
         Clock clock = Clock.fixed(Instant.parse("2026-10-13T02:30:00Z"), properties.zoneId());
-        service = new NotificationGenerationService(coreClient, writer,
-                new ProductExpiryRule(properties), new UpcomingEventRule(properties), properties, clock, metrics);
+        service = new NotificationGenerationService(
+                coreClient,
+                writer,
+                new ProductExpiryRule(properties),
+                new UpcomingEventRule(properties),
+                properties,
+                clock,
+                metrics,
+                pushDispatch
+        );
 
         when(coreClient.products(any(), any(), anyInt(), anyInt())).thenReturn(new CandidatePage<>(List.of(), false));
         when(coreClient.events(any(), any(), anyInt(), anyInt())).thenReturn(new CandidatePage<>(List.of(), false));
@@ -81,6 +93,7 @@ class NotificationGenerationServiceTest {
         verify(coreClient).products(TODAY, TODAY.plusDays(3), 1, 2);
         verify(coreClient).events(TODAY, TODAY.plusDays(7), 1, 2);
         verify(writer, times(5)).saveIfAbsent(any());
+        verify(pushDispatch, times(5)).send(any());
         assertEquals(2, count("notify.notifications.created", NotificationType.PRODUCT_EXPIRING));
         assertEquals(3, count("notify.notifications.created", NotificationType.UPCOMING_EVENT));
         assertEquals(1, metrics.get("notify.generation.duration").tag("result", "success").timer().count());
@@ -101,6 +114,7 @@ class NotificationGenerationServiceTest {
         assertEquals(0, service.generate());
 
         verify(writer, times(2)).saveIfAbsent(any());
+        verify(pushDispatch).send(any());
         assertEquals(1, count("notify.notifications.created", NotificationType.PRODUCT_EXPIRING));
         assertEquals(1, count("notify.notifications.duplicates", NotificationType.PRODUCT_EXPIRING));
         assertEquals(2, metrics.get("notify.generation.duration").tag("result", "success").timer().count());
@@ -130,6 +144,7 @@ class NotificationGenerationServiceTest {
 
         assertEquals(0, service.generate());
         verify(writer).saveIfAbsent(any());
+        verifyNoInteractions(pushDispatch);
         assertEquals(0, count("notify.notifications.created", NotificationType.PRODUCT_EXPIRING));
         assertEquals(1, count("notify.notifications.duplicates", NotificationType.PRODUCT_EXPIRING));
     }
@@ -166,6 +181,7 @@ class NotificationGenerationServiceTest {
         when(writer.saveIfAbsent(any())).thenThrow(exception);
 
         assertSame(exception, assertThrows(IllegalStateException.class, service::generate));
+        verifyNoInteractions(pushDispatch);
         assertEquals(0, count("notify.notifications.created", NotificationType.PRODUCT_EXPIRING));
         assertEquals(0, count("notify.notifications.duplicates", NotificationType.PRODUCT_EXPIRING));
         assertEquals(1, metrics.get("notify.generation.duration").tag("result", "failure").timer().count());
@@ -221,6 +237,20 @@ class NotificationGenerationServiceTest {
         assertEquals(4, metrics.get("notify.generation.duration").tag("result", "failure")
                 .timer().totalTime(TimeUnit.SECONDS));
         assertEquals(0, metrics.get("notify.generation.duration").tag("result", "success").timer().count());
+    }
+
+    @Test
+    void dispatchesOnlyAfterTheNotificationHasBeenPersisted() {
+        when(coreClient.products(TODAY, TODAY.plusDays(3), 0, 2))
+                .thenReturn(new CandidatePage<>(List.of(product(45, 3)), false));
+
+        assertEquals(1, service.generate());
+
+        InOrder order = inOrder(writer, pushDispatch);
+        order.verify(writer).saveIfAbsent(any());
+        order.verify(pushDispatch).send(argThat(notification -> notification.getProfileId() == 12
+                && notification.getType() == NotificationType.PRODUCT_EXPIRING));
+        order.verifyNoMoreInteractions();
     }
 
     private double count(String name, NotificationType type) {
