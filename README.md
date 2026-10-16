@@ -12,7 +12,7 @@ Para a primeira configuração, copie o modelo na raiz do projeto. Se você já 
 Copy-Item .env.example .env.properties
 ```
 
-Preencha `MONGO_URI` e `MONGO_DB` com a base que contém a collection `notifications`, gerenciada pelo NexUs-DB. Configure `NOTIFY_CORE_TOKEN` com o mesmo token da integração no Core e `JWT_SECRET_BASE64` com a mesma chave usada pelo Auth e pelo Core. A chave JWT deve representar pelo menos 32 bytes após a decodificação Base64.
+Preencha `MONGO_URI` e `MONGO_DB` com a base das collections `notifications` e `push_installations`. O provisionamento das collections e dos índices pertence ao NexUs-DB: aplique o script `script/mongo/V1__notify_collections_and_indexes.js` desse repositório antes de publicar a API. A criação automática de índices no Notify está desabilitada. Configure `NOTIFY_CORE_TOKEN` com o mesmo token da integração no Core e `JWT_SECRET_BASE64` com a mesma chave usada pelo Auth e pelo Core. A chave JWT deve representar pelo menos 32 bytes após a decodificação Base64.
 
 Os arquivos `.env` e `.env.properties` são carregados da raiz do projeto e estão no `.gitignore`. Ambos usam o formato `CHAVE=VALOR`, sem aspas envolvendo os valores. Se os dois existirem, `.env.properties` tem prioridade. Variáveis de ambiente do processo têm prioridade sobre esses arquivos.
 
@@ -81,7 +81,7 @@ Referências: [Firebase Admin SDK](https://firebase.google.com/docs/admin/setup)
 
 Inicializar o SDK verifica localmente a credencial e o projeto; não faz uma chamada remota para confirmar se a chave foi revogada, se o papel IAM permite enviar ou se a API FCM V1 está habilitada. O health atual também não valida o Firebase. Essas verificações exigem um teste real quando o envio estiver implementado.
 
-Esta etapa prepara o cliente Firebase. O cadastro de instalações, os endpoints correspondentes e o processamento dos envios serão implementados depois. O mobile precisará registrar sua instalação no FCM, enviar o FID com o JWT do perfil, atualizar esse cadastro e desvinculá-lo no logout. Nenhum contrato novo para o mobile é exposto nesta etapa.
+O cliente Firebase está preparado e o cadastro de instalações está disponível pelos endpoints descritos abaixo. O processamento dos envios será implementado depois. O contrato para a integração futura do mobile está em [Cadastro de instalações push](docs/push-installations.md).
 
 ## Regras e agendamento
 
@@ -131,6 +131,25 @@ curl -X PATCH -H 'Authorization: Bearer <JWT_DO_AUTH>' http://localhost:8082/api
 ```
 
 Parâmetros ou IDs inválidos retornam `400`. Um aviso ausente ou pertencente a outro perfil retorna `404`. Falhas de autenticação retornam `401`.
+
+## Cadastro de instalações push
+
+As duas rotas exigem o JWT do Auth. O perfil é sempre obtido do token; o cadastro funciona mesmo com `NOTIFY_PUSH_ENABLED=false`, pois nesta etapa utiliza apenas o MongoDB.
+
+| Método e rota | Resultado |
+| --- | --- |
+| `PUT /api/push/installations` | Cria ou atualiza o cadastro pelo `installationId`, com resposta `200` contendo `id` e `status`. |
+| `DELETE /api/push/installations/{id}` | Desvincula o cadastro do perfil autenticado, com resposta `204`. Usa o ID interno retornado pelo PUT. |
+
+Corpo do PUT:
+
+```json
+{"installationId": "FID_REGISTRADO_NO_FCM"}
+```
+
+O FID é único na collection `push_installations`. Chamadas repetidas preservam o ID e a data original de criação. Uma instalação pode mudar de perfil, e um perfil pode ter várias instalações. No logout, o cadastro recebe `profile_id=null`, `status=REVOKED` e `disabled_reason=LOGOUT`. O DELETE repetido, sem vínculo ou de outro perfil retorna `204` sem alterar o documento. Um ID interno inválido ou um FID inválido retorna `400`; ausência ou falha de autenticação retorna `401`.
+
+Consulte [Cadastro de instalações push](docs/push-installations.md) para o esquema da collection, as regras de atualização, exemplos de requisição e um roteiro de teste manual. O envio pelo Firebase e a integração Android serão implementados em etapas posteriores.
 
 ## Health e métricas
 
