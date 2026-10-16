@@ -39,6 +39,7 @@ Em Linux ou macOS:
 | `CORE_READ_TIMEOUT` | `5s` | Limite de espera da resposta do Core. |
 | `JWT_ISSUER` | `nexus-auth` | Emissor esperado no JWT. Deve corresponder ao Auth. |
 | `JWT_SECRET_BASE64` | Obrigatória | Chave de validação dos tokens do Auth. |
+| `TRACING_ACESS` | Vazio | Chave fixa de monitoramento, enviada no parâmetro `key` das rotas de métricas. Sem configuração, essas rotas retornam `503`. |
 | `CORS_ALLOWED_ORIGINS` | Vazio | Origens de navegador permitidas, separadas por vírgula. |
 | `NOTIFY_SCHEDULER_ENABLED` | `true` | Habilita a geração automática. |
 | `NOTIFY_SCHEDULER_CRON` | `0 0 11 * * *` | Horário de execução, com seis campos. |
@@ -149,7 +150,7 @@ Corpo do PUT:
 
 O FID é único na collection `push_installations`. Chamadas repetidas preservam o ID e a data original de criação. Uma instalação pode mudar de perfil, e um perfil pode ter várias instalações. No logout, o cadastro recebe `profile_id=null`, `status=REVOKED` e `disabled_reason=LOGOUT`. O DELETE repetido, sem vínculo ou de outro perfil retorna `204` sem alterar o documento. Um ID interno inválido ou um FID inválido retorna `400`; ausência ou falha de autenticação retorna `401`.
 
-Consulte [Cadastro de instalações push](docs/push-installations.md) para o esquema da collection, as regras de atualização, exemplos de requisição e um roteiro de teste manual. O envio pelo Firebase e a integração Android serão implementados em etapas posteriores.
+Consulte [Cadastro de instalações push](docs/push-installations.md) para o esquema da collection, as regras de atualização, exemplos de requisição e um roteiro de teste manual. O envio pelo Firebase está descrito em [Envio de push](docs/push-delivery.md); a integração Android continua pendente.
 
 ## Health e métricas
 
@@ -158,10 +159,12 @@ O Actuator expõe apenas `health` e `metrics`.
 | Rota | Acesso | Uso |
 | --- | --- | --- |
 | `GET /actuator/health` | Público | Status do serviço, incluindo a verificação do MongoDB. Detalhes e componentes ficam ocultos. |
-| `GET /actuator/metrics` | JWT com `profile_type=ADMIN` | Lista das métricas disponíveis. |
-| `GET /actuator/metrics/{name}` | JWT com `profile_type=ADMIN` | Valores e filtros de uma métrica. |
+| `GET /actuator/metrics` | Chave `TRACING_ACESS` no parâmetro `key` | Lista das métricas disponíveis. |
+| `GET /actuator/metrics/{name}` | Chave `TRACING_ACESS` no parâmetro `key` | Valores e filtros de uma métrica. |
 
-O health retorna `200` com status `UP` quando as verificações passam e `503` com status `DOWN` quando uma dependência verificada falha. Ele verifica o MongoDB, mas não realiza uma consulta ao Core. O acesso às métricas sem token retorna `401`; um perfil sem a permissão `ADMIN` recebe `403`.
+O health retorna `200` com status `UP` quando as verificações passam e `503` com status `DOWN` quando uma dependência verificada falha. Ele verifica o MongoDB, mas não realiza uma consulta ao Core. As métricas usam uma chave fixa, seguindo o mecanismo de monitoramento do Auth. Configure `TRACING_ACESS` no `.env.properties`, `.env` ou nas variáveis do Discloud e envie seu valor no parâmetro `key`. O nome da variável preserva a grafia usada pelo Auth.
+
+A segurança das métricas usa uma cadeia própria, sem autenticação JWT ou papel `ADMIN`. Chave ausente ou incorreta retorna `401`; chave não configurada no servidor retorna `503`. A comparação usa `MessageDigest.isEqual`, e o filtro não registra a chave nos logs nem a devolve nas mensagens de erro. Um JWT não substitui a chave de monitoramento, e essa chave não autentica as rotas do aplicativo, que continuam exigindo JWT do Auth. Apenas `health` e `metrics` estão expostos pelo Actuator.
 
 | Métrica | Etiqueta | Informação |
 | --- | --- | --- |
@@ -173,13 +176,13 @@ No timer, `COUNT` representa as execuções concluídas com aquele resultado, `T
 
 ```sh
 curl http://localhost:8082/actuator/health
-curl -H 'Authorization: Bearer <JWT_ADMIN_DO_AUTH>' http://localhost:8082/actuator/metrics
-curl -H 'Authorization: Bearer <JWT_ADMIN_DO_AUTH>' 'http://localhost:8082/actuator/metrics/notify.generation.duration?tag=result:failure'
+curl --get --data-urlencode 'key=<TRACING_ACESS>' http://localhost:8082/actuator/metrics
+curl --get --data-urlencode 'key=<TRACING_ACESS>' --data-urlencode 'tag=result:failure' http://localhost:8082/actuator/metrics/notify.generation.duration
 ```
 
 Os contadores de avisos aparecem após o primeiro registro correspondente. As métricas ficam na memória da instância e reiniciam com a aplicação. As etiquetas de negócio usam apenas tipo e resultado; nenhum ID de perfil, produto ou evento é usado como etiqueta. A etiqueta `application` identifica o serviço.
 
-Os logs registram início, conclusão, quantidade criada, duração em milissegundos e falhas da geração. A stack trace auxilia o diagnóstico. Tokens e conteúdo dos avisos não são registrados deliberadamente nesses logs. O acompanhamento de envios de push será adicionado com essa integração.
+Os logs registram início, conclusão, quantidade criada, duração em milissegundos e falhas da geração. A stack trace auxilia o diagnóstico. Tokens e conteúdo dos avisos não são registrados deliberadamente nesses logs. Os resultados de envio de push também são registrados conforme [Envio de push](docs/push-delivery.md).
 
 ## Validação
 
