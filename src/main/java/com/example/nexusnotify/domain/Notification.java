@@ -2,19 +2,12 @@ package com.example.nexusnotify.domain;
 
 import org.bson.types.ObjectId;
 import org.springframework.data.annotation.Id;
-import org.springframework.data.mongodb.core.index.CompoundIndex;
-import org.springframework.data.mongodb.core.index.CompoundIndexes;
 import org.springframework.data.mongodb.core.mapping.Document;
 import org.springframework.data.mongodb.core.mapping.Field;
 import java.time.Instant;
 import java.util.Objects;
 
 @Document(collection = "notifications")
-@CompoundIndexes({
-    @CompoundIndex(name = "uq_notification_alert",
-        def = "{'profile_id': 1, 'type': 1, 'source_id': 1, 'alert_key': 1}", unique = true),
-    @CompoundIndex(name = "idx_notification_profile_created", def = "{'profile_id': 1, 'created_at': -1}")
-})
 public class Notification {
 
     @Id

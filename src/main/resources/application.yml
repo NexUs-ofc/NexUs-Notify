@@ -10,7 +10,7 @@ spring:
     database: ${MONGO_DB}
   data:
     mongodb:
-      auto-index-creation: true
+      auto-index-creation: false
 
 server:
   port: ${NOTIFY_PORT:8082}

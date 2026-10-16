@@ -83,14 +83,9 @@ class NotificationMappingTests {
     }
 
     @Test
-    void definesUniqueAlertAndProfileDateIndexes() {
+    void doesNotDeclareIndexesOwnedByNexusDb() {
         MongoPersistentEntityIndexResolver resolver = new MongoPersistentEntityIndexResolver(context);
 
-        assertThat(resolver.resolveIndexFor(Notification.class)).anySatisfy(index -> {
-            assertThat(index.getIndexKeys()).isEqualTo(Document.parse(
-                "{'profile_id': 1, 'type': 1, 'source_id': 1, 'alert_key': 1}"));
-            assertThat(index.getIndexOptions()).containsEntry("unique", true);
-        }).anySatisfy(index -> assertThat(index.getIndexKeys())
-            .isEqualTo(Document.parse("{'profile_id': 1, 'created_at': -1}")));
+        assertThat(resolver.resolveIndexFor(Notification.class)).isEmpty();
     }
 }
