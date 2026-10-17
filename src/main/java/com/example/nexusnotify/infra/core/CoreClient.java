@@ -1,17 +1,22 @@
 package com.example.nexusnotify.infra.core;
 
-import com.example.nexusnotify.config.CoreProperties;
+import com.example.nexusnotify.config.properties.CoreProperties;
 import org.springframework.core.ParameterizedTypeReference;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestClientException;
 import org.springframework.web.client.RestClientResponseException;
 import java.time.LocalDate;
+import java.util.Optional;
 
 public class CoreClient {
 
     private static final ParameterizedTypeReference<CandidatePage<ProductCandidate>> PRODUCT_RESPONSE =
             new ParameterizedTypeReference<>() {};
     private static final ParameterizedTypeReference<CandidatePage<EventCandidate>> EVENT_RESPONSE =
+            new ParameterizedTypeReference<>() {};
+    private static final ParameterizedTypeReference<CandidatePage<NearbyStoreCandidate>> NEARBY_STORE_RESPONSE =
+            new ParameterizedTypeReference<>() {};
+    private static final ParameterizedTypeReference<CandidatePage<NewStoreCandidate>> NEW_STORE_RESPONSE =
             new ParameterizedTypeReference<>() {};
 
     private final RestClient restClient;
@@ -23,14 +28,24 @@ public class CoreClient {
     }
 
     public CandidatePage<ProductCandidate> products(LocalDate from, LocalDate to, int page, int size) {
-        return fetch("/internal/notifications/products", from, to, page, size, PRODUCT_RESPONSE);
+        return fetch("/internal/notifications/products", from, to, null, page, size, PRODUCT_RESPONSE);
     }
 
     public CandidatePage<EventCandidate> events(LocalDate from, LocalDate to, int page, int size) {
-        return fetch("/internal/notifications/events", from, to, page, size, EVENT_RESPONSE);
+        return fetch("/internal/notifications/events", from, to, null, page, size, EVENT_RESPONSE);
     }
 
-    private <T> CandidatePage<T> fetch(String path, LocalDate from, LocalDate to, int page, int size,
+    public CandidatePage<NearbyStoreCandidate> nearbyStores(double radiusKm, int page, int size) {
+        return fetch("/internal/notifications/nearby-stores", null, null, radiusKm,
+                page, size, NEARBY_STORE_RESPONSE);
+    }
+
+    public CandidatePage<NewStoreCandidate> newStores(LocalDate from, LocalDate to, double radiusKm,
+                                                     int page, int size) {
+        return fetch("/internal/notifications/new-stores", from, to, radiusKm, page, size, NEW_STORE_RESPONSE);
+    }
+
+    private <T> CandidatePage<T> fetch(String path, LocalDate from, LocalDate to, Double radiusKm, int page, int size,
                                        ParameterizedTypeReference<CandidatePage<T>> responseType) {
         if (properties.token() == null || properties.token().isBlank()) {
             throw new CoreIntegrationException("Configure NOTIFY_CORE_TOKEN antes de consultar o Core");
@@ -38,8 +53,9 @@ public class CoreClient {
         try {
             CandidatePage<T> result = restClient.get()
                     .uri(builder -> builder.path(path)
-                            .queryParam("from", from)
-                            .queryParam("to", to)
+                            .queryParamIfPresent("from", Optional.ofNullable(from))
+                            .queryParamIfPresent("to", Optional.ofNullable(to))
+                            .queryParamIfPresent("radiusKm", Optional.ofNullable(radiusKm))
                             .queryParam("page", page)
                             .queryParam("size", size)
                             .build())

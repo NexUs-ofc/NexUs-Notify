@@ -8,7 +8,7 @@
 4. O `FirebasePushProvider` envia uma mensagem de dados pelo FID usando o Firebase Admin SDK.
 5. Cada resultado é registrado nos logs. Um erro em um aparelho não interrompe os demais.
 
-As collections continuam sendo apenas `notifications` e `push_installations`. Não há collection de entregas, novos campos no aviso, novos endpoints ou novos índices nesta etapa. Os índices necessários e seus comandos de preparação estão em [Cadastro de instalações](push-installations.md).
+O envio usa `notifications` e `push_installations`, sem collection de entregas. Os índices dessas collections estão em [Cadastro de instalações](push-installations.md). A geração de lojas usa também as collections de rotação, pendências e progresso descritas em [Lojas próximas](nearby-stores.md); elas não representam uma fila de entrega de push.
 
 Com o push desabilitado, não há inicialização do Firebase nem consulta de instalações durante a geração. Os avisos continuam sendo salvos e consultados normalmente. Avisos já existentes não são enviados ao habilitar o push posteriormente. Sem instalações ativas, o aviso permanece apenas no histórico.
 
@@ -51,6 +51,8 @@ Mensagem de dados, com todos os valores como strings:
 ```
 
 Não há payload `notification` de exibição automática. O aplicativo deve implementar o recebimento da mensagem de dados, conferir a sessão e só então exibir o aviso. Deve descartar mensagens sem sessão ou com outro `profileId`, evitar duplicações por `notificationId` e consultar a API para obter o estado atualizado. Mensagens do mesmo perfil entre sessões diferentes não são diferenciadas por este contrato; se necessário, isso exigirá uma versão de vínculo compartilhada entre cliente e API.
+
+Os tipos `NEARBY_STORE` e `NEW_NEARBY_STORE` usam o mesmo payload. Neles, `sourceId` é o ID da loja no Core. O mobile deve reconhecer os tipos e pode usar esse ID para abrir a loja. O estado de ciclos e pendências permanece no servidor. A sugestão conta para o intervalo quando é gravada no histórico, mesmo sem instalações ativas ou quando o envio falha.
 
 O envio usa prioridade Android alta para avisos visíveis ao usuário e TTL de uma hora no FCM. O mobile deve exibir os avisos elegíveis prontamente; prioridade alta sem conteúdo visível pode ser rebaixada pelo FCM. Permissão Android, canal de notificação e execução em segundo plano precisam ser tratados e testados no mobile. O TTL não confirma entrega nem substitui a data de criação do histórico.
 

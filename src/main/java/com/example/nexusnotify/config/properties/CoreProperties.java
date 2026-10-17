@@ -1,4 +1,4 @@
-package com.example.nexusnotify.config;
+package com.example.nexusnotify.config.properties;
 
 import org.springframework.boot.context.properties.ConfigurationProperties;
 import java.net.URI;
