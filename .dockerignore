@@ -1,0 +1,14 @@
+.git
+.github
+.idea
+.vscode
+target
+*.iml
+*.log
+.DS_Store
+
+# Local environment files may contain credentials.
+.env
+.env.*
+**/.env
+**/.env.*
