@@ -1,6 +1,6 @@
 package com.example.nexusnotify.service.rule;
 
-import com.example.nexusnotify.config.NotificationProperties;
+import com.example.nexusnotify.config.properties.NotificationProperties;
 import com.example.nexusnotify.domain.Notification;
 import com.example.nexusnotify.domain.NotificationType;
 import com.example.nexusnotify.infra.core.ProductCandidate;

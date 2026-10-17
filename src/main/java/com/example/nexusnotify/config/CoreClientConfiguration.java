@@ -1,5 +1,6 @@
 package com.example.nexusnotify.config;
 
+import com.example.nexusnotify.config.properties.CoreProperties;
 import com.example.nexusnotify.infra.core.CoreClient;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;

@@ -1,9 +1,9 @@
 package com.example.nexusnotify;
 
-import com.example.nexusnotify.config.AuthProperties;
-import com.example.nexusnotify.config.CoreProperties;
-import com.example.nexusnotify.config.NotificationProperties;
-import com.example.nexusnotify.config.SchedulerProperties;
+import com.example.nexusnotify.config.properties.AuthProperties;
+import com.example.nexusnotify.config.properties.CoreProperties;
+import com.example.nexusnotify.config.properties.NotificationProperties;
+import com.example.nexusnotify.config.properties.SchedulerProperties;
 import com.example.nexusnotify.infra.core.CoreClient;
 import com.example.nexusnotify.infra.scheduler.NotificationScheduler;
 import com.example.nexusnotify.service.NotificationGenerationService;

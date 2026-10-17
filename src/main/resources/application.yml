@@ -44,6 +44,10 @@ app:
     jwt-secret-base64: ${JWT_SECRET_BASE64}
 
 notify:
+  nearby-stores:
+    enabled: ${NOTIFY_NEARBY_STORES_ENABLED:true}
+    radius-km: ${NOTIFY_NEARBY_STORES_RADIUS_KM:5}
+    interval-days: ${NOTIFY_NEARBY_STORES_INTERVAL_DAYS:3}
   push:
     enabled: ${NOTIFY_PUSH_ENABLED:false}
     project-id: ${FIREBASE_PROJECT_ID:}
