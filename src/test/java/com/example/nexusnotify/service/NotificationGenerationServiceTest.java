@@ -1,6 +1,6 @@
 package com.example.nexusnotify.service;
 
-import com.example.nexusnotify.config.NotificationProperties;
+import com.example.nexusnotify.config.properties.NotificationProperties;
 import com.example.nexusnotify.domain.Notification;
 import com.example.nexusnotify.domain.NotificationType;
 import com.example.nexusnotify.infra.core.CandidatePage;
@@ -47,6 +47,7 @@ class NotificationGenerationServiceTest {
     private CoreClient coreClient;
     private NotificationWriter writer;
     private PushDispatchService pushDispatch;
+    private NearbyStoreNotificationGenerationService stores;
     private NotificationGenerationService service;
     private SimpleMeterRegistry metrics;
     private MockClock metricsClock;
@@ -56,21 +57,19 @@ class NotificationGenerationServiceTest {
         coreClient = mock(CoreClient.class);
         writer = mock(NotificationWriter.class);
         pushDispatch = mock(PushDispatchService.class);
+        stores = mock(NearbyStoreNotificationGenerationService.class);
         metricsClock = new MockClock();
         metrics = new SimpleMeterRegistry(SimpleConfig.DEFAULT, metricsClock);
         NotificationProperties properties = new NotificationProperties(
                 List.of(3, 1, 0), List.of(7, 3, 1, 0), 2, ZoneId.of("America/Sao_Paulo"));
         Clock clock = Clock.fixed(Instant.parse("2026-10-13T02:30:00Z"), properties.zoneId());
+        NotificationCreationService creation = new NotificationCreationService(writer, pushDispatch, metrics);
         service = new NotificationGenerationService(
-                coreClient,
-                writer,
-                new ProductExpiryRule(properties),
-                new UpcomingEventRule(properties),
-                properties,
-                clock,
-                metrics,
-                pushDispatch
-        );
+                new ProductNotificationGenerationService(coreClient, creation, new ProductExpiryRule(properties),
+                        properties),
+                new EventNotificationGenerationService(coreClient, creation, new UpcomingEventRule(properties),
+                        properties),
+                stores, clock, metrics);
 
         when(coreClient.products(any(), any(), anyInt(), anyInt())).thenReturn(new CandidatePage<>(List.of(), false));
         when(coreClient.events(any(), any(), anyInt(), anyInt())).thenReturn(new CandidatePage<>(List.of(), false));
@@ -207,6 +206,67 @@ class NotificationGenerationServiceTest {
     }
 
     @Test
+    void generatesEventsEvenWhenTheProductQueryFails() {
+        CoreIntegrationException failure = new CoreIntegrationException("products unavailable");
+        when(coreClient.products(any(), any(), anyInt(), anyInt())).thenThrow(failure);
+        when(coreClient.events(TODAY, TODAY.plusDays(7), 0, 2))
+                .thenReturn(new CandidatePage<>(List.of(event("event-1", 1)), false));
+
+        assertSame(failure, assertThrows(CoreIntegrationException.class, service::generate));
+
+        verify(pushDispatch).send(argThat(notification -> notification.getType() == NotificationType.UPCOMING_EVENT));
+        assertEquals(1, count("notify.notifications.created", NotificationType.UPCOMING_EVENT));
+        assertEquals(1, metrics.get("notify.generation.duration").tag("result", "failure").timer().count());
+    }
+
+    @Test
+    void generatesEventsEvenWhenSavingAProductFails() {
+        when(coreClient.products(TODAY, TODAY.plusDays(3), 0, 2))
+                .thenReturn(new CandidatePage<>(List.of(product(45, 3)), false));
+        when(coreClient.events(TODAY, TODAY.plusDays(7), 0, 2))
+                .thenReturn(new CandidatePage<>(List.of(event("event-1", 1)), false));
+        when(writer.saveIfAbsent(argThat(notification -> notification.getType() == NotificationType.PRODUCT_EXPIRING)))
+                .thenThrow(new IllegalStateException("product failure"));
+
+        assertThrows(IllegalStateException.class, service::generate);
+
+        verify(pushDispatch).send(argThat(notification -> notification.getType() == NotificationType.UPCOMING_EVENT));
+        assertEquals(1, count("notify.notifications.created", NotificationType.UPCOMING_EVENT));
+    }
+
+    @Test
+    void runsStoresAfterBothOtherFlowsFailAndPreservesBothFailures() {
+        CoreIntegrationException productFailure = new CoreIntegrationException("products unavailable");
+        CoreIntegrationException eventFailure = new CoreIntegrationException("events unavailable");
+        when(coreClient.products(any(), any(), anyInt(), anyInt())).thenThrow(productFailure);
+        when(coreClient.events(any(), any(), anyInt(), anyInt())).thenThrow(eventFailure);
+        when(stores.generate(TODAY)).thenReturn(1);
+
+        assertSame(productFailure, assertThrows(CoreIntegrationException.class, service::generate));
+
+        assertThat(productFailure.getSuppressed()).containsExactly(eventFailure);
+        verify(stores).generate(TODAY);
+        assertEquals(1, metrics.get("notify.generation.flow.duration")
+                .tags("flow", "stores", "result", "success").timer().count());
+    }
+
+    @Test
+    void preservesProductAndEventNotificationsWhenTheStoresFlowFails() {
+        when(coreClient.products(TODAY, TODAY.plusDays(3), 0, 2))
+                .thenReturn(new CandidatePage<>(List.of(product(45, 3)), false));
+        when(coreClient.events(TODAY, TODAY.plusDays(7), 0, 2))
+                .thenReturn(new CandidatePage<>(List.of(event("event-1", 1)), false));
+        when(stores.generate(TODAY)).thenThrow(new IllegalStateException("stores unavailable"));
+
+        assertThrows(IllegalStateException.class, service::generate);
+
+        verify(pushDispatch, times(2)).send(any());
+        assertEquals(1, count("notify.notifications.created", NotificationType.PRODUCT_EXPIRING));
+        assertEquals(1, count("notify.notifications.created", NotificationType.UPCOMING_EVENT));
+        assertEquals(1, metrics.get("notify.generation.duration").tag("result", "failure").timer().count());
+    }
+
+    @Test
     void measuresTimeSpentQueryingAndSavingWithoutTagsForUserData() {
         when(coreClient.products(TODAY, TODAY.plusDays(3), 0, 2)).thenAnswer(invocation -> {
             metricsClock.add(Duration.ofSeconds(2));
@@ -222,7 +282,7 @@ class NotificationGenerationServiceTest {
         assertEquals(3, metrics.get("notify.generation.duration").tag("result", "success")
                 .timer().totalTime(TimeUnit.SECONDS));
         assertThat(metrics.getMeters()).allSatisfy(meter -> assertThat(meter.getId().getTags())
-                .allSatisfy(tag -> assertThat(tag.getKey()).isIn("type", "result")));
+                .allSatisfy(tag -> assertThat(tag.getKey()).isIn("type", "result", "flow")));
     }
 
     @Test

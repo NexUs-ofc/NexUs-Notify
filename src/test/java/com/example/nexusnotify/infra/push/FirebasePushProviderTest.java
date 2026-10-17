@@ -47,8 +47,11 @@ class FirebasePushProviderTest {
         ReflectionTestUtils.setField(notification, "id", new ObjectId());
     }
 
-    @Test
-    void sendsTheSavedNotificationAsDataToAFidAndReturnsTheFirebaseMessageId() throws Exception {
+    @ParameterizedTest
+    @EnumSource(NotificationType.class)
+    void sendsTheSavedNotificationAsDataToAFidAndReturnsTheFirebaseMessageId(NotificationType type) throws Exception {
+        notification = new Notification(12, type, "45", "test", "Aviso", "Confira o aviso.");
+        ReflectionTestUtils.setField(notification, "id", new ObjectId());
         when(messaging.send(any(Message.class))).thenReturn("projects/test/messages/123");
 
         PushProvider.Result result = provider.send(notification, "registered-fid");
@@ -72,7 +75,7 @@ class FirebasePushProviderTest {
         JsonObject data = payload.getAsJsonObject("data");
         assertThat(data.get("notificationId").getAsString()).isEqualTo(notification.getId().toHexString());
         assertThat(data.get("profileId").getAsString()).isEqualTo("12");
-        assertThat(data.get("type").getAsString()).isEqualTo("PRODUCT_EXPIRING");
+        assertThat(data.get("type").getAsString()).isEqualTo(type.name());
         assertThat(data.get("sourceId").getAsString()).isEqualTo("45");
         assertThat(data.get("title").getAsString()).isEqualTo(notification.getTitle());
         assertThat(data.get("message").getAsString()).isEqualTo(notification.getMessage());

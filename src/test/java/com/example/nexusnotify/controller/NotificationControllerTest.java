@@ -13,6 +13,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
+import org.junit.jupiter.params.provider.EnumSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
@@ -202,6 +203,23 @@ class NotificationControllerTest {
                 .andExpect(status().isUnauthorized());
 
         verifyNoInteractions(repository);
+    }
+
+    @ParameterizedTest
+    @EnumSource(value = NotificationType.class, names = {"NEARBY_STORE", "NEW_NEARBY_STORE"})
+    void exposesStoreNotificationsThroughTheExistingProfileHistory(NotificationType type) throws Exception {
+        notification = new Notification(12, type, "4", "nearby-store:cycle:1", "Loja próxima", "Loja D");
+        ReflectionTestUtils.setField(notification, "id", id);
+        Pageable pageable = PageRequest.of(0, 20, Sort.by(Sort.Direction.DESC, "id"));
+        when(repository.findByProfileIdOrderByCreatedAtDesc(12, pageable))
+                .thenReturn(new SliceImpl<>(List.of(notification), pageable, false));
+
+        mockMvc.perform(get("/api/notifications").header(HttpHeaders.AUTHORIZATION, authorization))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.content[0].type").value(type.name()))
+                .andExpect(jsonPath("$.content[0].sourceId").value("4"))
+                .andExpect(jsonPath("$.content[0].profileId").doesNotExist())
+                .andExpect(jsonPath("$.content[0].alertKey").doesNotExist());
     }
 
     private String token(String profileId) {

@@ -58,6 +58,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
     "notify.core.token=notify-test-token",
     "notify.scheduler.enabled=false",
     "notify.push.enabled=false",
+    "notify.nearby-stores.enabled=false",
     "TRACING_ACESS=notify-metrics-test-key",
     "app.auth.issuer=nexus-auth-test",
     "app.auth.jwt-secret-base64=MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY="
