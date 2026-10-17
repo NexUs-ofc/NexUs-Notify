@@ -38,6 +38,7 @@ management:
       application: ${spring.application.name}
 
 app:
+  tracing-access-key: ${TRACING_ACESS:}
   auth:
     issuer: ${JWT_ISSUER:nexus-auth}
     jwt-secret-base64: ${JWT_SECRET_BASE64}

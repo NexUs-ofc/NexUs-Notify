@@ -46,6 +46,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 @WebMvcTest(controllers = SecurityConfigurationTest.TestController.class, properties = {
     "app.auth.issuer=nexus-auth-test",
     "app.auth.jwt-secret-base64=MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY=",
+    "app.tracing-access-key=",
     "CORS_ALLOWED_ORIGINS=https://app.nexus.test"
 })
 @Import({SecurityConfiguration.class, CurrentProfileResolver.class,
@@ -69,6 +70,13 @@ class SecurityConfigurationTest {
     @Test
     void rejectsRequestsWithoutAToken() throws Exception {
         mockMvc.perform(get("/test/profile")).andExpect(status().isUnauthorized());
+    }
+
+    @Test
+    void blocksMetricsWhenTheMonitoringKeyIsNotConfigured() throws Exception {
+        mockMvc.perform(get("/actuator/metrics"))
+                .andExpect(status().isServiceUnavailable())
+                .andExpect(jsonPath("$.error").value("TRACING_ACESS nao configurada no servidor."));
     }
 
     @Test

@@ -58,10 +58,13 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
     "notify.core.token=notify-test-token",
     "notify.scheduler.enabled=false",
     "notify.push.enabled=false",
+    "TRACING_ACESS=notify-metrics-test-key",
     "app.auth.issuer=nexus-auth-test",
     "app.auth.jwt-secret-base64=MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY="
 })
 class ObservabilityTest {
+
+    private static final String TRACING_KEY = "notify-metrics-test-key";
 
     @Autowired
     private WebApplicationContext context;
@@ -127,28 +130,62 @@ class ObservabilityTest {
     }
 
     @Test
-    void requiresAuthenticationForMetrics() throws Exception {
+    void requiresAMonitoringKeyForMetrics() throws Exception {
         mockMvc.perform(get("/actuator/metrics")).andExpect(status().isUnauthorized());
         mockMvc.perform(get("/actuator/metrics/notify.generation.duration"))
                 .andExpect(status().isUnauthorized());
     }
 
     @Test
-    void rejectsOperationalAccessFromANonAdminProfile() throws Exception {
-        mockMvc.perform(get("/actuator/metrics").header(HttpHeaders.AUTHORIZATION, token("HOUSEHOLD")))
-                .andExpect(status().isForbidden());
+    void acceptsTheMonitoringKeyWithoutAJwt() throws Exception {
+        mockMvc.perform(get("/actuator/metrics").param("key", TRACING_KEY))
+                .andExpect(status().isOk());
         mockMvc.perform(get("/actuator/metrics/notify.generation.duration")
-                        .header(HttpHeaders.AUTHORIZATION, token("HOUSEHOLD")))
-                .andExpect(status().isForbidden());
+                        .param("key", TRACING_KEY))
+                .andExpect(status().isOk());
     }
 
     @Test
-    void listsAndFiltersGenerationMetricsForAnAdmin() throws Exception {
-        mockMvc.perform(get("/actuator/metrics").header(HttpHeaders.AUTHORIZATION, token("ADMIN")))
+    void rejectsAnInvalidKeyEvenWhenAValidJwtIsPresent() throws Exception {
+        mockMvc.perform(get("/actuator/metrics")
+                        .param("key", "wrong-key")
+                        .header(HttpHeaders.AUTHORIZATION, token("HOUSEHOLD")))
+                .andExpect(status().isUnauthorized());
+        mockMvc.perform(get("/actuator/metrics/notify.generation.duration")
+                        .param("key", "wrong-key")
+                        .header(HttpHeaders.AUTHORIZATION, token("HOUSEHOLD")))
+                .andExpect(status().isUnauthorized());
+    }
+
+    @Test
+    void doesNotAcceptAJwtInPlaceOfTheMonitoringKey() throws Exception {
+        mockMvc.perform(get("/actuator/metrics").header(HttpHeaders.AUTHORIZATION, token("HOUSEHOLD")))
+                .andExpect(status().isUnauthorized());
+    }
+
+    @Test
+    void doesNotParseBearerTokensOnTheMonitoringChain() throws Exception {
+        mockMvc.perform(get("/actuator/metrics")
+                        .param("key", TRACING_KEY)
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer invalid"))
+                .andExpect(status().isOk());
+    }
+
+    @Test
+    void doesNotAcceptTheMonitoringKeyForApplicationRoutes() throws Exception {
+        mockMvc.perform(get("/api/notifications").param("key", TRACING_KEY))
+                .andExpect(status().isUnauthorized());
+        mockMvc.perform(get("/api/push/installations").param("key", TRACING_KEY))
+                .andExpect(status().isUnauthorized());
+    }
+
+    @Test
+    void listsAndFiltersGenerationMetricsWithTheMonitoringKey() throws Exception {
+        mockMvc.perform(get("/actuator/metrics").param("key", TRACING_KEY))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.names").value(hasItem("notify.generation.duration")));
         mockMvc.perform(get("/actuator/metrics/notify.generation.duration").param("tag", "result:failure")
-                        .header(HttpHeaders.AUTHORIZATION, token("ADMIN")))
+                        .param("key", TRACING_KEY))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.baseUnit").value("seconds"))
                 .andExpect(jsonPath("$.measurements[*].statistic").value(hasItem("COUNT")))
@@ -168,7 +205,7 @@ class ObservabilityTest {
 
         mockMvc.perform(get("/actuator/metrics/notify.notifications.created")
                         .param("tag", "type:PRODUCT_EXPIRING")
-                        .header(HttpHeaders.AUTHORIZATION, token("ADMIN")))
+                        .param("key", TRACING_KEY))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.measurements[0].statistic").value("COUNT"))
                 .andExpect(jsonPath("$.measurements[0].value").value(greaterThanOrEqualTo(1.0)))
@@ -177,10 +214,10 @@ class ObservabilityTest {
     }
 
     @Test
-    void keepsUnselectedActuatorEndpointsUnavailableEvenToAdmins() throws Exception {
-        mockMvc.perform(get("/actuator/env").header(HttpHeaders.AUTHORIZATION, token("ADMIN")))
+    void keepsUnselectedActuatorEndpointsUnavailableToAuthenticatedProfiles() throws Exception {
+        mockMvc.perform(get("/actuator/env").header(HttpHeaders.AUTHORIZATION, token("HOUSEHOLD")))
                 .andExpect(status().isNotFound());
-        mockMvc.perform(get("/actuator/beans").header(HttpHeaders.AUTHORIZATION, token("ADMIN")))
+        mockMvc.perform(get("/actuator/beans").header(HttpHeaders.AUTHORIZATION, token("HOUSEHOLD")))
                 .andExpect(status().isNotFound());
     }
 
@@ -189,9 +226,13 @@ class ObservabilityTest {
                 .getBytes(StandardCharsets.UTF_8), "HmacSHA256");
         JwtEncoder encoder = new NimbusJwtEncoder(new ImmutableSecret<>(key));
         Instant now = Instant.now();
-        JwtClaimsSet claims = JwtClaimsSet.builder().issuer("nexus-auth-test").subject("12")
-                .issuedAt(now).expiresAt(now.plusSeconds(600)).claim("profile_type", profileType).build();
-        return "Bearer " + encoder.encode(JwtEncoderParameters.from(JwsHeader.with(MacAlgorithm.HS256).build(), claims))
+        JwtClaimsSet.Builder claims = JwtClaimsSet.builder().issuer("nexus-auth-test").subject("12")
+                .issuedAt(now).expiresAt(now.plusSeconds(600));
+        if (profileType != null) {
+            claims.claim("profile_type", profileType);
+        }
+        return "Bearer " + encoder.encode(JwtEncoderParameters.from(
+                        JwsHeader.with(MacAlgorithm.HS256).build(), claims.build()))
                 .getTokenValue();
     }
 }
