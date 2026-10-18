@@ -1,50 +1,34 @@
 package com.example.nexusnotify.service;
 
-import com.example.nexusnotify.config.NotificationProperties;
-import com.example.nexusnotify.domain.Notification;
-import com.example.nexusnotify.infra.core.CandidatePage;
-import com.example.nexusnotify.infra.core.CoreClient;
-import com.example.nexusnotify.infra.core.EventCandidate;
-import com.example.nexusnotify.infra.core.ProductCandidate;
-import com.example.nexusnotify.service.rule.ProductExpiryRule;
-import com.example.nexusnotify.service.rule.UpcomingEventRule;
 import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.Timer;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import java.time.Clock;
 import java.time.LocalDate;
-import java.util.Collections;
-import java.util.Optional;
+import java.util.List;
+import java.util.function.IntSupplier;
 
 @Service
 public class NotificationGenerationService {
 
-    private final CoreClient coreClient;
-    private final NotificationWriter writer;
-    private final PushDispatchService pushDispatch;
-    private final ProductExpiryRule productRule;
-    private final UpcomingEventRule eventRule;
-    private final NotificationProperties properties;
+    private static final Logger logger = LoggerFactory.getLogger(NotificationGenerationService.class);
+    private final ProductNotificationGenerationService products;
+    private final EventNotificationGenerationService events;
+    private final NearbyStoreNotificationGenerationService stores;
     private final Clock clock;
     private final MeterRegistry metrics;
     private final Timer successTimer;
     private final Timer failureTimer;
 
-    public NotificationGenerationService(
-            CoreClient coreClient,
-            NotificationWriter writer,
-            ProductExpiryRule productRule,
-            UpcomingEventRule eventRule,
-            NotificationProperties properties,
-            Clock clock,
-            MeterRegistry metrics,
-            PushDispatchService pushDispatch) {
-        this.coreClient = coreClient;
-        this.writer = writer;
-        this.pushDispatch = pushDispatch;
-        this.productRule = productRule;
-        this.eventRule = eventRule;
-        this.properties = properties;
+    public NotificationGenerationService(ProductNotificationGenerationService products,
+                                         EventNotificationGenerationService events,
+                                         NearbyStoreNotificationGenerationService stores,
+                                         Clock clock, MeterRegistry metrics) {
+        this.products = products;
+        this.events = events;
+        this.stores = stores;
         this.clock = clock;
         this.metrics = metrics;
         this.successTimer = metrics.timer("notify.generation.duration", "result", "success");
@@ -56,7 +40,27 @@ public class NotificationGenerationService {
         Timer timer = failureTimer;
         try {
             LocalDate today = LocalDate.now(clock);
-            int created = generateProducts(today) + generateEvents(today);
+            List<Flow> flows = List.of(
+                    new Flow("products", () -> products.generate(today)),
+                    new Flow("events", () -> events.generate(today)),
+                    new Flow("stores", () -> stores.generate(today))
+            );
+            int created = 0;
+            RuntimeException failure = null;
+            for (Flow flow : flows) {
+                try {
+                    created += generateFlow(flow);
+                } catch (RuntimeException exception) {
+                    if (failure == null) {
+                        failure = exception;
+                    } else if (failure != exception) {
+                        failure.addSuppressed(exception);
+                    }
+                }
+            }
+            if (failure != null) {
+                throw failure;
+            }
             timer = successTimer;
             return created;
         } finally {
@@ -64,58 +68,22 @@ public class NotificationGenerationService {
         }
     }
 
-    private int generateProducts(LocalDate today) {
-        LocalDate until = today.plusDays(Collections.max(properties.productDaysBefore()));
-
-        int page = 0;
-        int created = 0;
-        CandidatePage<ProductCandidate> candidates;
-
-        do {
-            candidates = coreClient.products(today, until, page, properties.pageSize());
-            for (ProductCandidate product : candidates.content()) {
-                created += create(productRule.evaluate(product, today));
-            }
-            page++;
-        } while (candidates.hasNext());
-
-        return created;
-    }
-
-    private int generateEvents(LocalDate today) {
-        LocalDate from = today.plusDays(Collections.min(properties.eventDaysBefore()));
-        LocalDate until = today.plusDays(Collections.max(properties.eventDaysBefore()));
-
-        int page = 0;
-        int created = 0;
-        CandidatePage<EventCandidate> candidates;
-
-        do {
-            candidates = coreClient.events(from, until, page, properties.pageSize());
-            for (EventCandidate event : candidates.content()) {
-                created += create(eventRule.evaluate(event, today));
-            }
-            page++;
-        } while (candidates.hasNext());
-
-        return created;
-    }
-
-    private int create(Optional<Notification> result) {
-        if (result.isEmpty()) {
-            return 0;
+    private int generateFlow(Flow flow) {
+        Timer.Sample sample = Timer.start(metrics);
+        String result = "failure";
+        try {
+            int created = flow.generation().getAsInt();
+            result = "success";
+            logger.info("Fluxo de notificacoes concluido flow={} criadas={}", flow.name(), created);
+            return created;
+        } catch (RuntimeException exception) {
+            logger.error("Falha no fluxo de notificacoes flow={} error_type={}",
+                    flow.name(), exception.getClass().getSimpleName());
+            throw exception;
+        } finally {
+            sample.stop(metrics.timer("notify.generation.flow.duration", "flow", flow.name(), "result", result));
         }
-
-        Notification notification = result.get();
-        boolean created = writer.saveIfAbsent(notification);
-        String metric = created ? "notify.notifications.created" : "notify.notifications.duplicates";
-
-        metrics.counter(metric, "type", notification.getType().name()).increment();
-
-        if (created) {
-            pushDispatch.send(notification);
-        }
-
-        return created ? 1 : 0;
     }
+
+    private record Flow(String name, IntSupplier generation) {}
 }

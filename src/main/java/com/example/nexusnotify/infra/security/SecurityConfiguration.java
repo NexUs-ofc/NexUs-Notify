@@ -1,6 +1,6 @@
 package com.example.nexusnotify.infra.security;
 
-import com.example.nexusnotify.config.AuthProperties;
+import com.example.nexusnotify.config.properties.AuthProperties;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;

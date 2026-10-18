@@ -38,13 +38,18 @@ public class Notification {
 
     public Notification(Integer profileId, NotificationType type, String sourceId, String alertKey,
                         String title, String message) {
+        this(profileId, type, sourceId, alertKey, title, message, Instant.now());
+    }
+
+    public Notification(Integer profileId, NotificationType type, String sourceId, String alertKey,
+                        String title, String message, Instant createdAt) {
         this.profileId = Objects.requireNonNull(profileId);
         this.type = Objects.requireNonNull(type);
         this.sourceId = Objects.requireNonNull(sourceId);
         this.alertKey = Objects.requireNonNull(alertKey);
         this.title = Objects.requireNonNull(title);
         this.message = Objects.requireNonNull(message);
-        this.createdAt = Instant.now();
+        this.createdAt = Objects.requireNonNull(createdAt);
     }
 
     public void markAsRead(Instant when) {

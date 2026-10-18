@@ -1,6 +1,6 @@
 package com.example.nexusnotify.infra.security;
 
-import com.example.nexusnotify.config.AuthProperties;
+import com.example.nexusnotify.config.properties.AuthProperties;
 import com.example.nexusnotify.util.CurrentProfileResolver;
 import com.nimbusds.jose.jwk.source.ImmutableSecret;
 import org.junit.jupiter.api.BeforeEach;

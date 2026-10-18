@@ -1,6 +1,6 @@
 package com.example.nexusnotify.infra.core;
 
-import com.example.nexusnotify.config.CoreProperties;
+import com.example.nexusnotify.config.properties.CoreProperties;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpMethod;
@@ -161,6 +161,53 @@ class CoreClientTest {
             assertThrows(CoreIntegrationException.class,
                     () -> unconfiguredClient.products(FROM, TO, 0, 100));
         }
+        server.verify();
+    }
+
+    @Test
+    void readsGroupedNearbyStoresWithTheAgreedRadiusAndServiceToken() {
+        server.expect(requestTo("http://core.test/internal/notifications/nearby-stores?radiusKm=5.0&page=1&size=2"))
+                .andExpect(method(HttpMethod.GET))
+                .andExpect(header("X-Notify-Token", TOKEN))
+                .andRespond(withSuccess("""
+                        {"content":[{"profileId":12,"stores":[
+                          {"storeId":4,"name":"Loja D","distanceKm":0.5}
+                        ]}],"hasNext":true}
+                        """, MediaType.APPLICATION_JSON));
+
+        var result = client.nearbyStores(5, 1, 2);
+
+        assertEquals(List.of(new NearbyStoreCandidate(12,
+                List.of(new NearbyStoreOption(4, "Loja D", 0.5)))), result.content());
+        assertTrue(result.hasNext());
+        server.verify();
+    }
+
+    @Test
+    void readsNewStoresAndTheirRecipientsUsingTheRequestedDateWindow() {
+        server.expect(requestTo("http://core.test/internal/notifications/new-stores"
+                        + "?from=2026-10-12&to=2026-10-15&radiusKm=5.0&page=0&size=100"))
+                .andExpect(header("X-Notify-Token", TOKEN))
+                .andRespond(withSuccess("""
+                        {"content":[{"storeId":4,"name":"Loja D",
+                          "createdDate":"2026-10-15","profileIds":[12,13]}],"hasNext":false}
+                        """, MediaType.APPLICATION_JSON));
+
+        var result = client.newStores(FROM, TO, 5, 0, 100);
+
+        assertEquals(List.of(new NewStoreCandidate(4, "Loja D", TO, List.of(12, 13))), result.content());
+        assertFalse(result.hasNext());
+        server.verify();
+    }
+
+    @Test
+    void rejectsAbsentResponsesAndMissingTokensForTheStoreEndpoints() {
+        server.expect(requestTo("http://core.test/internal/notifications/nearby-stores?radiusKm=5.0&page=0&size=100"))
+                .andRespond(withStatus(HttpStatus.NO_CONTENT));
+        assertThrows(CoreIntegrationException.class, () -> client.nearbyStores(5, 0, 100));
+        CoreClient unconfigured = new CoreClient(restClient, properties(""));
+        assertThrows(CoreIntegrationException.class, () -> unconfigured.nearbyStores(5, 0, 100));
+        assertThrows(CoreIntegrationException.class, () -> unconfigured.newStores(FROM, TO, 5, 0, 100));
         server.verify();
     }
 
