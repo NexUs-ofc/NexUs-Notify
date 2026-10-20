@@ -15,7 +15,11 @@ import org.springframework.boot.mongodb.autoconfigure.MongoProperties;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.context.ApplicationContext;
 import org.springframework.security.oauth2.jwt.JwtDecoder;
+import org.springframework.security.web.FilterChainProxy;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
+import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.web.servlet.setup.MockMvcBuilders;
+import org.springframework.web.context.WebApplicationContext;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.time.Clock;
@@ -26,6 +30,13 @@ import java.util.List;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 @SpringBootTest(properties = {
     "spring.config.import=",
@@ -82,8 +93,43 @@ class NexUsNotifyApplicationTests {
     @Autowired
     private JwtDecoder jwtDecoder;
 
+    @Autowired
+    private WebApplicationContext webContext;
+
     @Test
     void contextLoads() {
+    }
+
+    @Test
+    void exposesSwaggerWithoutAuthenticationAndKeepsApplicationEndpointsProtected() throws Exception {
+        MockMvc mockMvc = MockMvcBuilders.webAppContextSetup(webContext)
+                .addFilters(context.getBean(FilterChainProxy.class)).build();
+
+        mockMvc.perform(get("/swagger-ui.html")).andExpect(status().is3xxRedirection());
+        mockMvc.perform(get("/swagger-ui/index.html"))
+                .andExpect(status().isOk())
+                .andExpect(content().contentTypeCompatibleWith("text/html"));
+        mockMvc.perform(get("/swagger-ui/swagger-ui-bundle.js")).andExpect(status().isOk());
+        mockMvc.perform(get("/v3/api-docs/swagger-config"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.url").value("/v3/api-docs"));
+        mockMvc.perform(get("/v3/api-docs"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.info.title").value("NexUs Notify API"))
+                .andExpect(jsonPath("$.servers[0].url").value("/"))
+                .andExpect(jsonPath("$.components.securitySchemes.BearerAuth.type").value("http"))
+                .andExpect(jsonPath("$.components.securitySchemes.BearerAuth.scheme").value("bearer"))
+                .andExpect(jsonPath("$.security[0].BearerAuth").isArray())
+                .andExpect(jsonPath("$.paths['/api/notifications'].get").exists())
+                .andExpect(jsonPath("$.paths['/api/notifications/{id}/read'].patch").exists())
+                .andExpect(jsonPath("$.paths['/api/push/installations'].put").exists())
+                .andExpect(jsonPath("$.paths['/api/push/installations/{id}'].delete").exists());
+        mockMvc.perform(get("/v3/api-docs.yaml")).andExpect(status().isOk());
+
+        mockMvc.perform(get("/api/notifications")).andExpect(status().isUnauthorized());
+        mockMvc.perform(patch("/api/notifications/test/read")).andExpect(status().isUnauthorized());
+        mockMvc.perform(put("/api/push/installations")).andExpect(status().isUnauthorized());
+        mockMvc.perform(delete("/api/push/installations/test")).andExpect(status().isUnauthorized());
     }
 
     @Test

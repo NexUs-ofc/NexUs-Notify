@@ -106,6 +106,14 @@ O índice único de perfil, tipo, origem e chave do alerta protege a persistênc
 
 O envio é síncrono durante a geração, somente para avisos recém-inseridos e quando `NOTIFY_PUSH_ENABLED=true`. Repetir a geração não reenvia avisos já existentes, mesmo que uma tentativa anterior tenha falhado. Sem instalações ativas, o aviso permanece apenas no histórico. O Android ainda precisa implementar o recebimento e a exibição das mensagens de dados.
 
+## Swagger / OpenAPI
+
+Com a aplicação em execução, acesse `http://localhost:8082/swagger-ui.html` (ou a porta definida em `NOTIFY_PORT`). A especificação fica em `/v3/api-docs` (JSON) e `/v3/api-docs.yaml` (YAML).
+
+A documentação é pública, seguindo o padrão do Core e do Auth. Para executar as rotas do aplicativo pelo Swagger, clique em **Authorize** e informe somente o JWT emitido pelo Auth, sem o prefixo `Bearer`. O Swagger adiciona o header `Authorization: Bearer <token>` às requisições; as rotas continuam exigindo autenticação.
+
+O Notify usa Springdoc 3.1.1, compatível com Spring Boot 4, conforme a [documentação oficial](https://springdoc.org/).
+
 ## Endpoints do aplicativo
 
 As rotas de notificações exigem `Authorization: Bearer <JWT_DO_AUTH>`. O perfil é obtido do subject do JWT.
