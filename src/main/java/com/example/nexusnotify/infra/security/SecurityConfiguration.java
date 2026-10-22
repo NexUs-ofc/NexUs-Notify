@@ -1,5 +1,6 @@
 package com.example.nexusnotify.infra.security;
 
+import com.example.nexusnotify.admin.AdminKeyFilter;
 import com.example.nexusnotify.config.properties.AuthProperties;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
@@ -17,7 +18,6 @@ import org.springframework.security.oauth2.jwt.NimbusJwtDecoder;
 import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationConverter;
 import org.springframework.security.oauth2.server.resource.authentication.JwtGrantedAuthoritiesConverter;
 import org.springframework.security.web.SecurityFilterChain;
-import org.springframework.security.web.access.intercept.AuthorizationFilter;
 import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.CorsConfigurationSource;
 import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
@@ -46,21 +46,6 @@ public class SecurityConfiguration {
         NimbusJwtDecoder decoder = NimbusJwtDecoder.withSecretKey(secretKey).macAlgorithm(MacAlgorithm.HS256).build();
         decoder.setJwtValidator(JwtValidators.createDefaultWithIssuer(properties.issuer()));
         return decoder;
-    }
-
-    @Bean
-    @Order(1)
-    SecurityFilterChain metricsSecurityFilterChain(
-            HttpSecurity http,
-            CorsConfigurationSource corsConfigurationSource,
-            @Value("${app.tracing-access-key:}") String tracingAccessKey) throws Exception {
-        return http.securityMatcher("/actuator/metrics", "/actuator/metrics/**")
-                .cors(cors -> cors.configurationSource(corsConfigurationSource))
-                .csrf(csrf -> csrf.disable())
-                .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
-                .addFilterBefore(new TracingAuthFilter(tracingAccessKey), AuthorizationFilter.class)
-                .authorizeHttpRequests(auth -> auth.anyRequest().permitAll())
-                .build();
     }
 
     @Bean
@@ -97,7 +82,7 @@ public class SecurityConfiguration {
                 .filter(origin -> !origin.isEmpty())
                 .toList());
         configuration.setAllowedMethods(List.of("GET", "PATCH", "PUT", "DELETE", "OPTIONS"));
-        configuration.setAllowedHeaders(List.of("Authorization", "Content-Type"));
+        configuration.setAllowedHeaders(List.of("Authorization", "Content-Type", AdminKeyFilter.HEADER));
         configuration.setMaxAge(3600L);
 
         UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
