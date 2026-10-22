@@ -41,7 +41,9 @@ Em Linux ou macOS:
 | `CORE_READ_TIMEOUT` | `5s` | Limite de espera da resposta do Core. |
 | `JWT_ISSUER` | `nexus-auth` | Emissor esperado no JWT. Deve corresponder ao Auth. |
 | `JWT_SECRET_BASE64` | Obrigatória | Chave de validação dos tokens do Auth. |
-| `TRACING_ACESS` | Vazio | Chave fixa de monitoramento, enviada no parâmetro `key` das rotas de métricas. Sem configuração, essas rotas retornam `503`. |
+| `ADMIN_API_KEY` | Vazio | Chave do painel do administrador, a mesma em todos os serviços do NexUs. Vai no header `X-Admin-Key` (ou no parâmetro `key` nas rotas do Actuator). Sem ela, as rotas de métricas retornam `503`. `TRACING_ACESS` continua aceita como alternativa. |
+| `ADMIN_METRICS_STEP_MS` | `60000` | Intervalo entre amostras do painel, em milissegundos. |
+| `ADMIN_METRICS_RETENTION_MINUTES` | `720` | Quanto histórico o serviço guarda em memória para o painel. |
 | `CORS_ALLOWED_ORIGINS` | Vazio | Origens de navegador permitidas, separadas por vírgula. |
 | `NOTIFY_SCHEDULER_ENABLED` | `true` | Habilita a geração automática. |
 | `NOTIFY_SCHEDULER_CRON` | `0 0 11 * * *` | Horário de execução, com seis campos. |
@@ -169,19 +171,24 @@ O FID é único na collection `push_installations`. Chamadas repetidas preservam
 
 Consulte [Cadastro de instalações push](docs/push-installations.md) para o esquema da collection, as regras de atualização, exemplos de requisição e um roteiro de teste manual. O envio pelo Firebase está descrito em [Envio de push](docs/push-delivery.md); a integração Android continua pendente.
 
-## Health e métricas
+## Health, métricas e painel do administrador
 
-O Actuator expõe apenas `health` e `metrics`.
+O Actuator expõe `health`, `metrics` e `prometheus`. O painel do administrador consome as rotas `/admin`.
 
 | Rota | Acesso | Uso |
 | --- | --- | --- |
 | `GET /actuator/health` | Público | Status do serviço, incluindo a verificação do MongoDB. Detalhes e componentes ficam ocultos. |
-| `GET /actuator/metrics` | Chave `TRACING_ACESS` no parâmetro `key` | Lista das métricas disponíveis. |
-| `GET /actuator/metrics/{name}` | Chave `TRACING_ACESS` no parâmetro `key` | Valores e filtros de uma métrica. |
+| `GET /admin/session` | Header `X-Admin-Key` | Confirma a chave no login do painel: `200` com a chave certa, `401` sem ela. |
+| `GET /admin/metrics?minutos=60` | Header `X-Admin-Key` | As visões da página do Notify já calculadas: HTTP, JVM, pool do MongoDB, erros de log e entrega de push. |
+| `GET /actuator/prometheus` | Header `X-Admin-Key` ou parâmetro `key` | Formato de exposição do Prometheus, para um coletor externo. |
+| `GET /actuator/metrics` | Header `X-Admin-Key` ou parâmetro `key` | Lista das métricas disponíveis. |
+| `GET /actuator/metrics/{name}` | Header `X-Admin-Key` ou parâmetro `key` | Valores e filtros de uma métrica. |
 
-O health retorna `200` com status `UP` quando as verificações passam e `503` com status `DOWN` quando uma dependência verificada falha. Ele verifica o MongoDB, mas não realiza uma consulta ao Core. As métricas usam uma chave fixa, seguindo o mecanismo de monitoramento do Auth. Configure `TRACING_ACESS` no `.env.properties`, `.env` ou nas variáveis do Discloud e envie seu valor no parâmetro `key`. O nome da variável preserva a grafia usada pelo Auth.
+O health retorna `200` com status `UP` quando as verificações passam e `503` com status `DOWN` quando uma dependência verificada falha. Ele verifica o MongoDB, mas não realiza uma consulta ao Core.
 
-A segurança das métricas usa uma cadeia própria, sem autenticação JWT ou papel `ADMIN`. Chave ausente ou incorreta retorna `401`; chave não configurada no servidor retorna `503`. A comparação usa `MessageDigest.isEqual`, e o filtro não registra a chave nos logs nem a devolve nas mensagens de erro. Um JWT não substitui a chave de monitoramento, e essa chave não autentica as rotas do aplicativo, que continuam exigindo JWT do Auth. Apenas `health` e `metrics` estão expostos pelo Actuator.
+Não há servidor Prometheus guardando histórico. O próprio serviço lê o registro do Micrometer a cada `ADMIN_METRICS_STEP_MS` e guarda a janela recente em memória; `/admin/metrics` calcula taxas e percentis a partir dessas amostras, com as mesmas contas do `rate()` e do `histogram_quantile`. O histórico recomeça quando o processo reinicia. O contrato completo está em [Painel do administrador](docs/painel-admin.md).
+
+A segurança dessas rotas usa uma cadeia própria, sem autenticação JWT ou papel `ADMIN`. Chave ausente ou incorreta retorna `401`; chave não configurada no servidor retorna `503`. A comparação usa `MessageDigest.isEqual`, e o filtro não registra a chave nos logs nem a devolve nas mensagens de erro. Um JWT não substitui a chave do painel, e essa chave não autentica as rotas do aplicativo, que continuam exigindo JWT do Auth.
 
 | Métrica | Etiqueta | Informação |
 | --- | --- | --- |
@@ -189,13 +196,15 @@ A segurança das métricas usa uma cadeia própria, sem autenticação JWT ou pa
 | `notify.generation.flow.duration` | `flow=products`, `events` ou `stores`; `result=success` ou `failure` | Resultado e duração de cada fluxo, inclusive quando outro falha. |
 | `notify.notifications.created` | `type=PRODUCT_EXPIRING`, `UPCOMING_EVENT`, `NEARBY_STORE` ou `NEW_NEARBY_STORE` | Avisos efetivamente inseridos. Inclui inserções anteriores a uma falha na mesma execução. |
 | `notify.notifications.duplicates` | `type=PRODUCT_EXPIRING` ou `UPCOMING_EVENT` | Avisos que já existiam e foram ignorados. Intervalos sem sugestão de loja não contam como duplicação. |
+| `notify.push.deliveries` | `result=accepted`, `invalid_installation`, `failed` ou `error` | Uma contagem por tentativa de envio de push. Alimenta a entrega do painel. |
 
 No timer, `COUNT` representa as execuções concluídas com aquele resultado, `TOTAL_TIME` é o tempo acumulado em segundos e `MAX` é a maior duração na janela de medição. Candidatos fora das antecedências configuradas não entram no contador de duplicados.
 
 ```sh
 curl http://localhost:8082/actuator/health
-curl --get --data-urlencode 'key=<TRACING_ACESS>' http://localhost:8082/actuator/metrics
-curl --get --data-urlencode 'key=<TRACING_ACESS>' --data-urlencode 'tag=result:failure' http://localhost:8082/actuator/metrics/notify.generation.duration
+curl -H 'X-Admin-Key: <ADMIN_API_KEY>' 'http://localhost:8082/admin/metrics?minutos=60'
+curl -H 'X-Admin-Key: <ADMIN_API_KEY>' http://localhost:8082/actuator/metrics
+curl -H 'X-Admin-Key: <ADMIN_API_KEY>' --get --data-urlencode 'tag=result:failure' http://localhost:8082/actuator/metrics/notify.generation.duration
 ```
 
 Os contadores de avisos aparecem após o primeiro registro correspondente. As métricas ficam na memória da instância e reiniciam com a aplicação. As etiquetas de negócio usam apenas tipo, fluxo e resultado; nenhum ID de perfil, produto, evento ou loja é usado como etiqueta. A etiqueta `application` identifica o serviço.
