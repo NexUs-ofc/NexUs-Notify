@@ -4,29 +4,37 @@ import com.example.nexusnotify.domain.Notification;
 import com.example.nexusnotify.domain.PushInstallation;
 import com.example.nexusnotify.infra.push.PushProvider;
 import com.example.nexusnotify.infra.repository.PushInstallationRepository;
+import io.micrometer.core.instrument.MeterRegistry;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.stereotype.Service;
 import java.time.Clock;
 import java.time.Instant;
+import java.util.Locale;
 
 @Service
 public class PushDispatchService {
 
     private static final Logger logger = LoggerFactory.getLogger(PushDispatchService.class);
 
+    /** Uma contagem por tentativa de envio, com o desfecho na tag {@code result}. Alimenta o painel. */
+    static final String DELIVERIES_METRIC = "notify.push.deliveries";
+
     private final ObjectProvider<PushProvider> providers;
     private final PushInstallationRepository installations;
     private final Clock clock;
+    private final MeterRegistry metrics;
 
     public PushDispatchService(
             ObjectProvider<PushProvider> providers,
             PushInstallationRepository installations,
-            Clock clock) {
+            Clock clock,
+            MeterRegistry metrics) {
         this.providers = providers;
         this.installations = installations;
         this.clock = clock;
+        this.metrics = metrics;
     }
 
     public void send(Notification notification) {
@@ -59,6 +67,7 @@ public class PushDispatchService {
             }
 
             PushProvider.Result result = provider.send(notification, installation.installationId());
+            countDelivery(result.status().name().toLowerCase(Locale.ROOT));
 
             switch (result.status()) {
                 case ACCEPTED -> logger.info(
@@ -86,6 +95,7 @@ public class PushDispatchService {
                 default -> throw new IllegalStateException("Resultado de envio nao reconhecido");
             }
         } catch (RuntimeException exception) {
+            countDelivery("error");
             logger.error(
                     "Falha no push notification_id={} installation_record_id={} error_type={}",
                     notification.getId(),
@@ -93,5 +103,9 @@ public class PushDispatchService {
                     exception.getClass().getSimpleName()
             );
         }
+    }
+
+    private void countDelivery(String result) {
+        metrics.counter(DELIVERIES_METRIC, "result", result).increment();
     }
 }
