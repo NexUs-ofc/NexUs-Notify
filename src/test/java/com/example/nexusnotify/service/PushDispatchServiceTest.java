@@ -6,6 +6,8 @@ import com.example.nexusnotify.domain.PushInstallation;
 import com.example.nexusnotify.domain.PushInstallationStatus;
 import com.example.nexusnotify.infra.push.PushProvider;
 import com.example.nexusnotify.infra.repository.PushInstallationRepository;
+import io.micrometer.core.instrument.MeterRegistry;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.bson.types.ObjectId;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -40,15 +42,18 @@ class PushDispatchServiceTest {
     private Notification notification;
     private PushInstallation first;
     private PushInstallation second;
+    private MeterRegistry metrics;
 
     @BeforeEach
     void setUp() {
         provider = mock(PushProvider.class);
         installations = mock(PushInstallationRepository.class);
         clock = Clock.fixed(NOW, ZoneOffset.UTC);
+        metrics = new SimpleMeterRegistry();
         StaticListableBeanFactory beans = new StaticListableBeanFactory();
         beans.addBean("pushProvider", provider);
-        service = new PushDispatchService(beans.getBeanProvider(PushProvider.class), installations, clock);
+        service = new PushDispatchService(beans.getBeanProvider(PushProvider.class), installations, clock,
+                metrics);
         notification = new Notification(
                 12,
                 NotificationType.PRODUCT_EXPIRING,
@@ -66,9 +71,18 @@ class PushDispatchServiceTest {
     }
 
     @Test
+    void countsEachDeliveryAttemptByResultForTheAdminPanel() {
+        service.send(notification);
+
+        assertThat(metrics.counter(PushDispatchService.DELIVERIES_METRIC, "result", "accepted").count())
+                .isEqualTo(2.0);
+    }
+
+    @Test
     void doesNotAccessMongoOrFirebaseWhenPushIsDisabled() {
         StaticListableBeanFactory beans = new StaticListableBeanFactory();
-        service = new PushDispatchService(beans.getBeanProvider(PushProvider.class), installations, clock);
+        service = new PushDispatchService(beans.getBeanProvider(PushProvider.class), installations, clock,
+                metrics);
 
         service.send(notification);
 
