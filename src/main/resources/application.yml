@@ -23,10 +23,12 @@ management:
         enabled: true
       show-details: never
       show-components: never
+    prometheus:
+      access: unrestricted
   endpoints:
     web:
       exposure:
-        include: health,metrics
+        include: health,metrics,prometheus
   # O indicador padrao percorre TODOS os bancos (incluindo o "local") e o Atlas
   # bloqueia comandos no "local" mesmo para atlasAdmin. Desliga ele e usa o
   # AppMongoHealthIndicator, que consulta apenas o banco da aplicacao.
@@ -36,9 +38,21 @@ management:
   metrics:
     tags:
       application: ${spring.application.name}
+    distribution:
+      percentiles-histogram:
+        "[http.server.requests]": true
+      minimum-expected-value:
+        "[http.server.requests]": 5ms
+      maximum-expected-value:
+        "[http.server.requests]": 30s
 
 app:
-  tracing-access-key: ${TRACING_ACESS:}
+  admin:
+    key: ${ADMIN_API_KEY:${TRACING_ACESS:}}
+    metrics:
+      step-ms: ${ADMIN_METRICS_STEP_MS:60000}
+      retention-minutes: ${ADMIN_METRICS_RETENTION_MINUTES:720}
+      counters: notify.push.deliveries,notify.notifications.created
   auth:
     issuer: ${JWT_ISSUER:nexus-auth}
     jwt-secret-base64: ${JWT_SECRET_BASE64}

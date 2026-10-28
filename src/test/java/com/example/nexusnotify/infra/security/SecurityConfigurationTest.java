@@ -1,5 +1,6 @@
 package com.example.nexusnotify.infra.security;
 
+import com.example.nexusnotify.admin.AdminSecurityConfig;
 import com.example.nexusnotify.config.properties.AuthProperties;
 import com.example.nexusnotify.util.CurrentProfileResolver;
 import com.nimbusds.jose.jwk.source.ImmutableSecret;
@@ -46,10 +47,10 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 @WebMvcTest(controllers = SecurityConfigurationTest.TestController.class, properties = {
     "app.auth.issuer=nexus-auth-test",
     "app.auth.jwt-secret-base64=MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY=",
-    "app.tracing-access-key=",
+    "app.admin.key=",
     "CORS_ALLOWED_ORIGINS=https://app.nexus.test"
 })
-@Import({SecurityConfiguration.class, CurrentProfileResolver.class,
+@Import({SecurityConfiguration.class, AdminSecurityConfig.class, CurrentProfileResolver.class,
         SecurityConfigurationTest.TestSecurityConfiguration.class, SecurityConfigurationTest.TestController.class})
 class SecurityConfigurationTest {
 
@@ -76,7 +77,7 @@ class SecurityConfigurationTest {
     void blocksMetricsWhenTheMonitoringKeyIsNotConfigured() throws Exception {
         mockMvc.perform(get("/actuator/metrics"))
                 .andExpect(status().isServiceUnavailable())
-                .andExpect(jsonPath("$.error").value("TRACING_ACESS nao configurada no servidor."));
+                .andExpect(jsonPath("$.error").value("Chave do painel nao configurada no servidor (ADMIN_API_KEY)."));
     }
 
     @Test
