@@ -105,6 +105,29 @@ class CoreClientTest {
     }
 
     @Test
+    void readsShoppingListsWithTheirCompletionAndTargetId() {
+        server.expect(requestTo("http://core.test/internal/notifications/shopping-lists"
+                        + "?from=2026-10-12&to=2026-10-15&page=0&size=100"))
+                .andExpect(method(HttpMethod.GET))
+                .andExpect(header("X-Notify-Token", TOKEN))
+                .andRespond(withSuccess("""
+                        {"content":[
+                          {"profileId":12,"shoppingListId":"list-1","title":"Mercado",
+                           "date":"2026-10-15","completed":true},
+                          {"profileId":12,"shoppingListId":"list-2","title":"Jantar",
+                           "date":"2026-10-12","completed":false}
+                        ],"hasNext":true}
+                        """, MediaType.APPLICATION_JSON));
+
+        CandidatePage<ShoppingListCandidate> result = client.shoppingLists(FROM, TO, 0, 100);
+
+        assertEquals(List.of(new ShoppingListCandidate(12, "list-1", "Mercado", TO, true),
+                new ShoppingListCandidate(12, "list-2", "Jantar", FROM, false)), result.content());
+        assertTrue(result.hasNext());
+        server.verify();
+    }
+
+    @Test
     void acceptsAnEmptyBatch() {
         server.expect(requestTo(PRODUCTS))
                 .andRespond(withSuccess("""

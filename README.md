@@ -1,6 +1,6 @@
 # NexUs-Notify
 
-API de notificações do NexUs. Consulta candidatos no Core, aplica as regras de produtos, eventos e lojas próximas e salva os avisos no MongoDB. Com o push habilitado, tenta enviar os novos avisos pelo Firebase para as instalações ativas do perfil. O mobile consulta o histórico e registra a leitura pela API.
+API de notificações do NexUs. Consulta candidatos no Core, aplica as regras de produtos, eventos, listas de compras e lojas próximas e salva os avisos no MongoDB. Com o push habilitado, tenta enviar os novos avisos pelo Firebase para as instalações ativas do perfil. O mobile consulta o histórico e registra a leitura pela API.
 
 ## Execução local
 
@@ -14,7 +14,7 @@ Copy-Item .env.example .env.properties
 
 Preencha `MONGO_URI` e `MONGO_DB` com a base das collections `notifications` e `push_installations`. Prepare as collections e os índices previamente pelo `mongosh`, conforme [Cadastro de instalações push](docs/push-installations.md). A criação automática de índices no Notify está desabilitada. Configure `NOTIFY_CORE_TOKEN` com o mesmo token da integração no Core e `JWT_SECRET_BASE64` com a mesma chave usada pelo Auth e pelo Core. A chave JWT deve representar pelo menos 32 bytes após a decodificação Base64.
 
-Para lojas, prepare também `nearby_store_rotations`, `new_store_suggestions` e `new_store_discovery_state`, conforme [Lojas próximas](docs/nearby-stores.md). Para executar somente produtos e eventos, configure `NOTIFY_NEARBY_STORES_ENABLED=false`.
+Para lojas, prepare também `nearby_store_rotations`, `new_store_suggestions` e `new_store_discovery_state`, conforme [Lojas próximas](docs/nearby-stores.md). Para executar somente produtos, eventos e listas de compras, configure `NOTIFY_NEARBY_STORES_ENABLED=false`.
 
 Os arquivos `.env` e `.env.properties` são carregados da raiz do projeto e estão no `.gitignore`. Ambos usam o formato `CHAVE=VALOR`, sem aspas envolvendo os valores. Se os dois existirem, `.env.properties` tem prioridade. Variáveis de ambiente do processo têm prioridade sobre esses arquivos.
 
@@ -44,7 +44,6 @@ Em Linux ou macOS:
 | `ADMIN_API_KEY` | Vazio | Chave do painel do administrador, a mesma em todos os serviços do NexUs. Vai no header `X-Admin-Key` (ou no parâmetro `key` nas rotas do Actuator). Sem ela, as rotas de métricas retornam `503`. `TRACING_ACESS` continua aceita como alternativa. |
 | `ADMIN_METRICS_STEP_MS` | `60000` | Intervalo entre amostras do painel, em milissegundos. |
 | `ADMIN_METRICS_RETENTION_MINUTES` | `720` | Quanto histórico o serviço guarda em memória para o painel. |
-| `CORS_ALLOWED_ORIGINS` | Vazio | Origens de navegador permitidas, separadas por vírgula. |
 | `NOTIFY_SCHEDULER_ENABLED` | `true` | Habilita a geração automática. |
 | `NOTIFY_SCHEDULER_CRON` | `0 0 11 * * *` | Horário de execução, com seis campos. |
 | `NOTIFY_NEARBY_STORES_ENABLED` | `true` | Habilita descoberta de lojas novas e sugestões por endereço cadastrado. |
@@ -97,16 +96,21 @@ Após salvar um aviso novo, a API busca as instalações ativas do perfil, confe
 | --- | --- |
 | Produto próximo do vencimento | 3, 1 e no dia do vencimento. |
 | Evento próximo | 7, 3, 1 e no dia do evento. |
+| Lista de compras marcada | 7, 3, 1 e no dia marcado. |
 
 O job executa diariamente às 11h no fuso `America/Sao_Paulo`. Percorre as páginas do Core e gera os avisos previstos para a data da execução. O token da integração deve estar configurado para essas consultas.
 
-Produtos, eventos e lojas têm serviços de geração independentes. O job tenta os três fluxos mesmo se algum falhar. Uma falha parcial mantém o resultado geral como falha, preservando os avisos já criados e identificando cada fluxo nos logs e nas métricas.
+Produtos, eventos, listas de compras e lojas têm serviços de geração independentes. O job tenta os quatro fluxos mesmo se algum falhar. Uma falha parcial mantém o resultado geral como falha, preservando os avisos já criados e identificando cada fluxo nos logs e nas métricas.
 
 Lojas usam os endpoints internos `/internal/notifications/nearby-stores` e `/internal/notifications/new-stores` do Core, com `X-Notify-Token`. O raio padrão é 5 km do endereço cadastrado. O Notify permite uma sugestão de loja por perfil a cada 72 horas, prioriza novidades pendentes e, depois, escolhe a loja ainda não apresentada mais próxima. Ao esgotar as opções atuais, reinicia o ciclo e evita repetir a última loja quando houver alternativa. Consulte [Lojas próximas](docs/nearby-stores.md) para os ciclos, a persistência e a recuperação da descoberta.
 
-O índice único de perfil, tipo, origem e chave do alerta protege a persistência contra duplicações. Cada antecedência de produto/evento tem sua própria chave. O agendamento precisa do serviço em execução; execuções perdidas de produtos/eventos ainda não são recuperadas automaticamente. A descoberta de lojas novas mantém uma data de progresso persistida e recupera o intervalo desde a última consulta concluída.
+O índice único de perfil, tipo, origem e chave do alerta protege a persistência contra duplicações. Cada antecedência de produto/evento/lista tem sua própria chave. O agendamento precisa do serviço em execução; execuções perdidas de produtos/eventos/listas ainda não são recuperadas automaticamente. A descoberta de lojas novas mantém uma data de progresso persistida e recupera o intervalo desde a última consulta concluída.
 
 O envio é síncrono durante a geração, somente para avisos recém-inseridos e quando `NOTIFY_PUSH_ENABLED=true`. Repetir a geração não reenvia avisos já existentes, mesmo que uma tentativa anterior tenha falhado. Sem instalações ativas, o aviso permanece apenas no histórico. O Android ainda precisa implementar o recebimento e a exibição das mensagens de dados.
+
+Listas usam `/internal/notifications/shopping-lists` do Core e mantêm configuração própria `shopping-list-days-before`. O indicador `completed` muda apenas o texto; listas completas continuam elegíveis e listas sem data são ignoradas.
+
+Eventos da IA continuam usando `/internal/notifications/events`, independentemente das listas. O Core precisa incluir a restauração dessa rota de leitura da collection `events`; Core e IA devem apontar para a mesma base MongoDB.
 
 ## Swagger / OpenAPI
 
@@ -193,9 +197,9 @@ A segurança dessas rotas usa uma cadeia própria, sem autenticação JWT ou pap
 | Métrica | Etiqueta | Informação |
 | --- | --- | --- |
 | `notify.generation.duration` | `result=success` ou `failure` | Quantidade e duração das execuções, incluindo execuções sem candidatos e execuções com falha. |
-| `notify.generation.flow.duration` | `flow=products`, `events` ou `stores`; `result=success` ou `failure` | Resultado e duração de cada fluxo, inclusive quando outro falha. |
-| `notify.notifications.created` | `type=PRODUCT_EXPIRING`, `UPCOMING_EVENT`, `NEARBY_STORE` ou `NEW_NEARBY_STORE` | Avisos efetivamente inseridos. Inclui inserções anteriores a uma falha na mesma execução. |
-| `notify.notifications.duplicates` | `type=PRODUCT_EXPIRING` ou `UPCOMING_EVENT` | Avisos que já existiam e foram ignorados. Intervalos sem sugestão de loja não contam como duplicação. |
+| `notify.generation.flow.duration` | `flow=products`, `events`, `shopping-lists` ou `stores`; `result=success` ou `failure` | Resultado e duração de cada fluxo, inclusive quando outro falha. |
+| `notify.notifications.created` | `type=PRODUCT_EXPIRING`, `UPCOMING_EVENT`, `SHOPPING_LIST_REMINDER`, `NEARBY_STORE` ou `NEW_NEARBY_STORE` | Avisos efetivamente inseridos. Inclui inserções anteriores a uma falha na mesma execução. |
+| `notify.notifications.duplicates` | `type=PRODUCT_EXPIRING`, `UPCOMING_EVENT` ou `SHOPPING_LIST_REMINDER` | Avisos que já existiam e foram ignorados. Intervalos sem sugestão de loja não contam como duplicação. |
 | `notify.push.deliveries` | `result=accepted`, `invalid_installation`, `failed` ou `error` | Uma contagem por tentativa de envio de push. Alimenta a entrega do painel. |
 
 No timer, `COUNT` representa as execuções concluídas com aquele resultado, `TOTAL_TIME` é o tempo acumulado em segundos e `MAX` é a maior duração na janela de medição. Candidatos fora das antecedências configuradas não entram no contador de duplicados.
@@ -207,7 +211,7 @@ curl -H 'X-Admin-Key: <ADMIN_API_KEY>' http://localhost:8082/actuator/metrics
 curl -H 'X-Admin-Key: <ADMIN_API_KEY>' --get --data-urlencode 'tag=result:failure' http://localhost:8082/actuator/metrics/notify.generation.duration
 ```
 
-Os contadores de avisos aparecem após o primeiro registro correspondente. As métricas ficam na memória da instância e reiniciam com a aplicação. As etiquetas de negócio usam apenas tipo, fluxo e resultado; nenhum ID de perfil, produto, evento ou loja é usado como etiqueta. A etiqueta `application` identifica o serviço.
+Os contadores de avisos aparecem após o primeiro registro correspondente. As métricas ficam na memória da instância e reiniciam com a aplicação. As etiquetas de negócio usam apenas tipo, fluxo e resultado; nenhum ID de perfil, produto, evento, lista ou loja é usado como etiqueta. A etiqueta `application` identifica o serviço.
 
 Os logs registram início, conclusão, quantidade criada, duração em milissegundos e falhas da geração. A stack trace auxilia o diagnóstico. Tokens e conteúdo dos avisos não são registrados deliberadamente nesses logs. Os resultados de envio de push também são registrados conforme [Envio de push](docs/push-delivery.md).
 

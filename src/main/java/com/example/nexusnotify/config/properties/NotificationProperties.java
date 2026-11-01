@@ -8,6 +8,7 @@ import java.util.List;
 public record NotificationProperties(
         List<Integer> productDaysBefore,
         List<Integer> eventDaysBefore,
+        List<Integer> shoppingListDaysBefore,
         int pageSize,
         ZoneId zoneId
 ) {
@@ -15,6 +16,7 @@ public record NotificationProperties(
     public NotificationProperties {
         productDaysBefore = validateDays(productDaysBefore, 0);
         eventDaysBefore = validateDays(eventDaysBefore, 0);
+        shoppingListDaysBefore = validateDays(shoppingListDaysBefore, 0);
 
         if (pageSize < 1 || pageSize > 500) {
             throw new IllegalArgumentException("O tamanho do lote deve estar entre 1 e 500");

@@ -74,6 +74,7 @@ notify:
   notification:
     product-days-before: [3, 1, 0]
     event-days-before: [7, 3, 1, 0]
+    shopping-list-days-before: [7, 3, 1, 0]
     page-size: 100
     zone-id: America/Sao_Paulo
   scheduler:

@@ -16,6 +16,7 @@ public class NotificationGenerationService {
     private static final Logger logger = LoggerFactory.getLogger(NotificationGenerationService.class);
     private final ProductNotificationGenerationService products;
     private final EventNotificationGenerationService events;
+    private final ShoppingListNotificationGenerationService shoppingLists;
     private final NearbyStoreNotificationGenerationService stores;
     private final Clock clock;
     private final MeterRegistry metrics;
@@ -24,10 +25,12 @@ public class NotificationGenerationService {
 
     public NotificationGenerationService(ProductNotificationGenerationService products,
                                          EventNotificationGenerationService events,
+                                         ShoppingListNotificationGenerationService shoppingLists,
                                          NearbyStoreNotificationGenerationService stores,
                                          Clock clock, MeterRegistry metrics) {
         this.products = products;
         this.events = events;
+        this.shoppingLists = shoppingLists;
         this.stores = stores;
         this.clock = clock;
         this.metrics = metrics;
@@ -43,6 +46,7 @@ public class NotificationGenerationService {
             List<Flow> flows = List.of(
                     new Flow("products", () -> products.generate(today)),
                     new Flow("events", () -> events.generate(today)),
+                    new Flow("shopping-lists", () -> shoppingLists.generate(today)),
                     new Flow("stores", () -> stores.generate(today))
             );
             int created = 0;

@@ -31,6 +31,7 @@ class NotificationSchedulerTest {
             .withPropertyValues(
                     "notify.notification.product-days-before=3,1,0",
                     "notify.notification.event-days-before=7,3,1,0",
+                    "notify.notification.shopping-list-days-before=7,3,1,0",
                     "notify.notification.page-size=100",
                     "notify.notification.zone-id=America/Sao_Paulo",
                     "notify.scheduler.enabled=true",

@@ -19,7 +19,7 @@ class UpcomingEventRuleTest {
 
     private static final LocalDate TODAY = LocalDate.of(2026, 10, 13);
     private final UpcomingEventRule rule = new UpcomingEventRule(new NotificationProperties(
-            List.of(3, 1, 0), List.of(7, 3, 1, 0), 100, ZoneId.of("America/Sao_Paulo")));
+            List.of(3, 1, 0), List.of(7, 3, 1, 0), List.of(7, 3, 1, 0), 100, ZoneId.of("America/Sao_Paulo")));
 
     @Test
     void createsAlertsSevenThreeAndOneDayBeforeAndOnTheEventDay() {

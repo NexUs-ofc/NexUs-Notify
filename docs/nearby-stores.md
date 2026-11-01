@@ -68,6 +68,6 @@ Use uma base isolada com suporte a transações, os índices preparados e Core/A
 5. Continue até o novo ciclo. Confira a limpeza do conjunto e a prevenção de repetir a última loja quando houver alternativa.
 6. Inative uma loja pendente ou altere o endereço do perfil no Core. Confira que somente candidatos atualmente elegíveis são sugeridos.
 7. Em ambiente controlado, interrompa uma gravação ou execute dois jobs concorrentes. Confirme que não existe avanço confirmado de ciclo sem o aviso correspondente nem dois avisos no intervalo.
-8. Indisponibilize produtos, eventos e lojas separadamente. Confirme que os outros fluxos continuam e que `notify.generation.flow.duration` identifica o fluxo com falha.
+8. Indisponibilize produtos, eventos, listas de compras e lojas separadamente. Confirme que os outros fluxos continuam e que `notify.generation.flow.duration` identifica o fluxo com falha.
 
 Os testes automatizados usam o padrão do repositório com dependências simuladas, incluindo o driver e a sessão Mongo. Eles não substituem a verificação das transações, consultas geográficas do Core e entrega Firebase em ambiente real.
