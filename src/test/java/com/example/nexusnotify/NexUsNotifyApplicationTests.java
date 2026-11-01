@@ -151,6 +151,7 @@ class NexUsNotifyApplicationTests {
     void loadsNotificationRulesAndRegistersTheClock() {
         assertEquals(List.of(3, 1, 0), notificationProperties.productDaysBefore());
         assertEquals(List.of(7, 3, 1, 0), notificationProperties.eventDaysBefore());
+        assertEquals(List.of(7, 3, 1, 0), notificationProperties.shoppingListDaysBefore());
         assertEquals(100, notificationProperties.pageSize());
         assertEquals(ZoneId.of("America/Sao_Paulo"), notificationClock.getZone());
     }

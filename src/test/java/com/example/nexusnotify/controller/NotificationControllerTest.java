@@ -89,6 +89,20 @@ class NotificationControllerTest {
     }
 
     @Test
+    void exposesTheShoppingListTypeAndTargetInTheAuthenticatedHistory() throws Exception {
+        notification = new Notification(12, NotificationType.SHOPPING_LIST_REMINDER, "shopping-list-id",
+                "shopping-list:2026-10-13:days:0", "Lista de compras", "A lista Mercado está marcada para hoje!");
+        ReflectionTestUtils.setField(notification, "id", id);
+        when(repository.findByProfileIdOrderByCreatedAtDesc(eq(12), any(Pageable.class)))
+                .thenReturn(new SliceImpl<>(List.of(notification)));
+
+        mockMvc.perform(get("/api/notifications").header(HttpHeaders.AUTHORIZATION, authorization))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.content[0].type").value("SHOPPING_LIST_REMINDER"))
+                .andExpect(jsonPath("$.content[0].sourceId").value("shopping-list-id"));
+    }
+
+    @Test
     void listsTheAuthenticatedProfileWithDefaultPagination() throws Exception {
         when(repository.findByProfileIdOrderByCreatedAtDesc(eq(12), any(Pageable.class)))
                 .thenReturn(new SliceImpl<>(List.of(notification), PageRequest.of(0, 20), true));

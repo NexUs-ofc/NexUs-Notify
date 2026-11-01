@@ -56,6 +56,8 @@ Os tipos `NEARBY_STORE` e `NEW_NEARBY_STORE` usam o mesmo payload. Neles, `sourc
 
 O envio usa prioridade Android alta para avisos visíveis ao usuário e TTL de uma hora no FCM. O mobile deve exibir os avisos elegíveis prontamente; prioridade alta sem conteúdo visível pode ser rebaixada pelo FCM. Permissão Android, canal de notificação e execução em segundo plano precisam ser tratados e testados no mobile. O TTL não confirma entrega nem substitui a data de criação do histórico.
 
+O tipo `SHOPPING_LIST_REMINDER` usa `sourceId` como ID da lista de compras no Core. O aplicativo deve abrir a página dessa lista ao tocar no push ou em um aviso do histórico, consultar `/api/shopping-lists/{sourceId}` com o JWT atual e tratar lista excluída (404) ou sem acesso (403). O contrato não define uma URL de tela; a navegação é implementada no aplicativo. A mensagem já vem adequada ao estado de conclusão consultado durante a geração.
+
 ## Validação
 
 Os testes automatizados usam MongoDB e Firebase simulados: conferem o payload serializado pelo SDK, destinatário FID, configuração condicional, classificação dos erros, isolamento de falhas, filtros BSON e envio somente após salvar um aviso novo. Não usam credenciais reais nem fazem envios externos.
@@ -64,7 +66,7 @@ Para o teste integrado, use uma base isolada com os índices preparados, Core e 
 
 1. Configure as credenciais conforme o README e habilite `NOTIFY_PUSH_ENABLED=true`.
 2. Cadastre pelo PUT um FID real registrado no FCM com o JWT do perfil. `fid-de-teste` serve apenas para testar o cadastro com push desabilitado, não para confirmar recebimento.
-3. Prepare no Core um produto ou evento desse perfil que satisfaça uma regra para a data atual no fuso configurado.
+3. Prepare no Core um produto, evento ou lista com data desse perfil que satisfaça uma regra para a data atual no fuso configurado.
 4. Em teste, configure `NOTIFY_SCHEDULER_CRON=0 * * * * *` e mantenha `NOTIFY_SCHEDULER_ENABLED=true`. O job executará a cada minuto. Restaure o cron de produção após o teste.
 5. Confira o aviso no Mongo, o resultado nos logs e o recebimento Android. Um log de aceitação não prova que houve exibição.
 6. Repita a geração: o mesmo aviso não deve ser inserido ou enviado outra vez.

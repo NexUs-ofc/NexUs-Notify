@@ -8,7 +8,9 @@ import com.example.nexusnotify.infra.core.CoreClient;
 import com.example.nexusnotify.infra.core.CoreIntegrationException;
 import com.example.nexusnotify.infra.core.EventCandidate;
 import com.example.nexusnotify.infra.core.ProductCandidate;
+import com.example.nexusnotify.infra.core.ShoppingListCandidate;
 import com.example.nexusnotify.service.rule.ProductExpiryRule;
+import com.example.nexusnotify.service.rule.ShoppingListReminderRule;
 import com.example.nexusnotify.service.rule.UpcomingEventRule;
 import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.MockClock;
@@ -61,7 +63,7 @@ class NotificationGenerationServiceTest {
         metricsClock = new MockClock();
         metrics = new SimpleMeterRegistry(SimpleConfig.DEFAULT, metricsClock);
         NotificationProperties properties = new NotificationProperties(
-                List.of(3, 1, 0), List.of(7, 3, 1, 0), 2, ZoneId.of("America/Sao_Paulo"));
+                List.of(3, 1, 0), List.of(7, 3, 1, 0), List.of(7, 3, 1, 0), 2, ZoneId.of("America/Sao_Paulo"));
         Clock clock = Clock.fixed(Instant.parse("2026-10-13T02:30:00Z"), properties.zoneId());
         NotificationCreationService creation = new NotificationCreationService(writer, pushDispatch, metrics);
         service = new NotificationGenerationService(
@@ -69,10 +71,14 @@ class NotificationGenerationServiceTest {
                         properties),
                 new EventNotificationGenerationService(coreClient, creation, new UpcomingEventRule(properties),
                         properties),
+                new ShoppingListNotificationGenerationService(coreClient, creation,
+                        new ShoppingListReminderRule(properties), properties),
                 stores, clock, metrics);
 
         when(coreClient.products(any(), any(), anyInt(), anyInt())).thenReturn(new CandidatePage<>(List.of(), false));
         when(coreClient.events(any(), any(), anyInt(), anyInt())).thenReturn(new CandidatePage<>(List.of(), false));
+        when(coreClient.shoppingLists(any(), any(), anyInt(), anyInt()))
+                .thenReturn(new CandidatePage<>(List.of(), false));
         when(writer.saveIfAbsent(any())).thenReturn(true);
     }
 
@@ -311,6 +317,101 @@ class NotificationGenerationServiceTest {
         order.verify(pushDispatch).send(argThat(notification -> notification.getProfileId() == 12
                 && notification.getType() == NotificationType.PRODUCT_EXPIRING));
         order.verifyNoMoreInteractions();
+    }
+
+    @Test
+    void generatesAllFourFlowsIncludingExistingEvents() {
+        when(coreClient.products(TODAY, TODAY.plusDays(3), 0, 2))
+                .thenReturn(new CandidatePage<>(List.of(product(45, 1)), false));
+        when(coreClient.events(TODAY, TODAY.plusDays(7), 0, 2))
+                .thenReturn(new CandidatePage<>(List.of(event("event-1", 1)), false));
+        when(coreClient.shoppingLists(TODAY, TODAY.plusDays(7), 0, 2)).thenReturn(new CandidatePage<>(
+                List.of(new ShoppingListCandidate(12, "list-1", "Mercado", TODAY.plusDays(1), true)), false));
+        when(stores.generate(TODAY)).thenReturn(1);
+
+        assertEquals(4, service.generate());
+
+        verify(pushDispatch).send(argThat(n -> n.getType() == NotificationType.UPCOMING_EVENT
+                && n.getSourceId().equals("event-1")));
+        verify(pushDispatch).send(argThat(n -> n.getType() == NotificationType.SHOPPING_LIST_REMINDER
+                && n.getSourceId().equals("list-1") && n.getMessage().contains("Você já concluiu")));
+        verify(stores).generate(TODAY);
+        assertEquals(1, count("notify.notifications.created", NotificationType.SHOPPING_LIST_REMINDER));
+        assertEquals(1, metrics.get("notify.generation.flow.duration")
+                .tags("flow", "shopping-lists", "result", "success").timer().count());
+    }
+
+    @Test
+    void continuesAfterAnEmptyShoppingListPageAndSkipsUndatedAndUnscheduledLists() {
+        when(coreClient.shoppingLists(TODAY, TODAY.plusDays(7), 0, 2))
+                .thenReturn(new CandidatePage<>(List.of(), true));
+        when(coreClient.shoppingLists(TODAY, TODAY.plusDays(7), 1, 2)).thenReturn(new CandidatePage<>(List.of(
+                new ShoppingListCandidate(12, "no-date", "Mercado", null, false),
+                new ShoppingListCandidate(12, "two-days", "Mercado", TODAY.plusDays(2), false)), true));
+        when(coreClient.shoppingLists(TODAY, TODAY.plusDays(7), 2, 2)).thenReturn(new CandidatePage<>(List.of(
+                new ShoppingListCandidate(12, "today", "Mercado", TODAY, false)), false));
+
+        assertEquals(1, service.generate());
+
+        verify(coreClient).shoppingLists(TODAY, TODAY.plusDays(7), 2, 2);
+        InOrder order = inOrder(writer, pushDispatch);
+        order.verify(writer).saveIfAbsent(argThat(n -> n.getSourceId().equals("today")));
+        order.verify(pushDispatch).send(argThat(n -> n.getSourceId().equals("today")));
+        order.verifyNoMoreInteractions();
+    }
+
+    @Test
+    void changingCompletionDoesNotDuplicateAnAlertButChangingTheDateAllowsANewOne() {
+        when(coreClient.shoppingLists(TODAY, TODAY.plusDays(7), 0, 2))
+                .thenReturn(new CandidatePage<>(List.of(
+                        new ShoppingListCandidate(12, "list-1", "Mercado", TODAY, false)), false))
+                .thenReturn(new CandidatePage<>(List.of(
+                        new ShoppingListCandidate(12, "list-1", "Novo nome", TODAY, true)), false))
+                .thenReturn(new CandidatePage<>(List.of(
+                        new ShoppingListCandidate(12, "list-1", "Novo nome", TODAY.plusDays(1), true)), false));
+        Set<String> saved = new HashSet<>();
+        when(writer.saveIfAbsent(any())).thenAnswer(invocation -> {
+            Notification notification = invocation.getArgument(0);
+            return saved.add(notification.getAlertKey());
+        });
+
+        assertEquals(1, service.generate());
+        assertEquals(0, service.generate());
+        assertEquals(1, service.generate());
+
+        verify(pushDispatch, times(2)).send(any());
+        assertEquals(2, count("notify.notifications.created", NotificationType.SHOPPING_LIST_REMINDER));
+        assertEquals(1, count("notify.notifications.duplicates", NotificationType.SHOPPING_LIST_REMINDER));
+    }
+
+    @Test
+    void shoppingListFailureDoesNotPreventStoresOrExistingProductAndEventAlerts() {
+        when(coreClient.products(TODAY, TODAY.plusDays(3), 0, 2))
+                .thenReturn(new CandidatePage<>(List.of(product(45, 1)), false));
+        when(coreClient.events(TODAY, TODAY.plusDays(7), 0, 2))
+                .thenReturn(new CandidatePage<>(List.of(event("event-1", 1)), false));
+        when(coreClient.shoppingLists(any(), any(), anyInt(), anyInt()))
+                .thenThrow(new CoreIntegrationException("shopping lists unavailable"));
+
+        assertThrows(CoreIntegrationException.class, service::generate);
+
+        verify(pushDispatch, times(2)).send(any());
+        verify(stores).generate(TODAY);
+        assertEquals(1, metrics.get("notify.generation.flow.duration")
+                .tags("flow", "shopping-lists", "result", "failure").timer().count());
+    }
+
+    @Test
+    void shoppingListsAreGeneratedEvenWhenEventsFail() {
+        when(coreClient.events(any(), any(), anyInt(), anyInt()))
+                .thenThrow(new CoreIntegrationException("events unavailable"));
+        when(coreClient.shoppingLists(TODAY, TODAY.plusDays(7), 0, 2)).thenReturn(new CandidatePage<>(List.of(
+                new ShoppingListCandidate(12, "list-1", "Mercado", TODAY, false)), false));
+
+        assertThrows(CoreIntegrationException.class, service::generate);
+
+        verify(pushDispatch).send(argThat(n -> n.getType() == NotificationType.SHOPPING_LIST_REMINDER));
+        verify(stores).generate(TODAY);
     }
 
     private double count(String name, NotificationType type) {

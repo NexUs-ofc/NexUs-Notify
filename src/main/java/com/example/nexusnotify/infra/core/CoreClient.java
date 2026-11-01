@@ -14,6 +14,8 @@ public class CoreClient {
             new ParameterizedTypeReference<>() {};
     private static final ParameterizedTypeReference<CandidatePage<EventCandidate>> EVENT_RESPONSE =
             new ParameterizedTypeReference<>() {};
+    private static final ParameterizedTypeReference<CandidatePage<ShoppingListCandidate>> SHOPPING_LIST_RESPONSE =
+            new ParameterizedTypeReference<>() {};
     private static final ParameterizedTypeReference<CandidatePage<NearbyStoreCandidate>> NEARBY_STORE_RESPONSE =
             new ParameterizedTypeReference<>() {};
     private static final ParameterizedTypeReference<CandidatePage<NewStoreCandidate>> NEW_STORE_RESPONSE =
@@ -33,6 +35,10 @@ public class CoreClient {
 
     public CandidatePage<EventCandidate> events(LocalDate from, LocalDate to, int page, int size) {
         return fetch("/internal/notifications/events", from, to, null, page, size, EVENT_RESPONSE);
+    }
+
+    public CandidatePage<ShoppingListCandidate> shoppingLists(LocalDate from, LocalDate to, int page, int size) {
+        return fetch("/internal/notifications/shopping-lists", from, to, null, page, size, SHOPPING_LIST_RESPONSE);
     }
 
     public CandidatePage<NearbyStoreCandidate> nearbyStores(double radiusKm, int page, int size) {

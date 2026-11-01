@@ -153,7 +153,7 @@ class NearbyStoreNotificationGenerationServiceTest {
 
     private NearbyStoreNotificationGenerationService service(boolean enabled) {
         NotificationProperties notifications = new NotificationProperties(
-                List.of(3, 1, 0), List.of(7, 3, 1, 0), 2, ZoneId.of("America/Sao_Paulo"));
+                List.of(3, 1, 0), List.of(7, 3, 1, 0), List.of(7, 3, 1, 0), 2, ZoneId.of("America/Sao_Paulo"));
         return new NearbyStoreNotificationGenerationService(core, suggestions, pending, creation,
                 new NearbyStoreProperties(enabled, 5, 3), notifications,
                 Clock.fixed(NOW, notifications.zoneId()));

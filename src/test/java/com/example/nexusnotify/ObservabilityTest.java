@@ -200,6 +200,8 @@ class ObservabilityTest {
         when(coreClient.products(any(), any(), anyInt(), anyInt()))
                 .thenReturn(new CandidatePage<>(List.of(product), false));
         when(coreClient.events(any(), any(), anyInt(), anyInt())).thenReturn(new CandidatePage<>(List.of(), false));
+        when(coreClient.shoppingLists(any(), any(), anyInt(), anyInt()))
+                .thenReturn(new CandidatePage<>(List.of(), false));
         when(writer.saveIfAbsent(any())).thenReturn(true);
 
         generationService.generate();
