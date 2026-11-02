@@ -90,13 +90,12 @@ class PushDispatchServiceTest {
     }
 
     @Test
-    void sendsToEveryActiveInstallationOfTheRecipientWithoutChangingItsReadState() {
+    void sendsToEveryActiveInstallationOfTheRecipient() {
         service.send(notification);
 
         verify(provider).send(notification, first.installationId());
         verify(provider).send(notification, second.installationId());
         verify(installations, never()).markInvalid(any(), any());
-        assertThat(notification.getReadAt()).isNull();
     }
 
     @Test

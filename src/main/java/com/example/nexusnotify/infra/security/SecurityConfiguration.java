@@ -90,7 +90,7 @@ public class SecurityConfiguration {
                 .map(String::trim)
                 .filter(origin -> !origin.isEmpty())
                 .toList());
-        configuration.setAllowedMethods(List.of("GET", "PATCH", "PUT", "DELETE", "OPTIONS"));
+        configuration.setAllowedMethods(List.of("GET", "PUT", "DELETE", "OPTIONS"));
         configuration.setAllowedHeaders(List.of("Authorization", "Content-Type", AdminKeyFilter.HEADER));
         configuration.setExposedHeaders(List.of("Retry-After"));
         configuration.setMaxAge(3600L);

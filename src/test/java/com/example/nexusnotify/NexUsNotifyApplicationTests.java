@@ -32,7 +32,6 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
-import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -121,13 +120,12 @@ class NexUsNotifyApplicationTests {
                 .andExpect(jsonPath("$.components.securitySchemes.BearerAuth.scheme").value("bearer"))
                 .andExpect(jsonPath("$.security[0].BearerAuth").isArray())
                 .andExpect(jsonPath("$.paths['/api/notifications'].get").exists())
-                .andExpect(jsonPath("$.paths['/api/notifications/{id}/read'].patch").exists())
+                .andExpect(jsonPath("$.paths['/api/notifications/{id}/read']").doesNotExist())
                 .andExpect(jsonPath("$.paths['/api/push/installations'].put").exists())
                 .andExpect(jsonPath("$.paths['/api/push/installations/{id}'].delete").exists());
         mockMvc.perform(get("/v3/api-docs.yaml")).andExpect(status().isOk());
 
         mockMvc.perform(get("/api/notifications")).andExpect(status().isUnauthorized());
-        mockMvc.perform(patch("/api/notifications/test/read")).andExpect(status().isUnauthorized());
         mockMvc.perform(put("/api/push/installations")).andExpect(status().isUnauthorized());
         mockMvc.perform(delete("/api/push/installations/test")).andExpect(status().isUnauthorized());
     }

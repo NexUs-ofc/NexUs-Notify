@@ -17,7 +17,6 @@ import org.junit.jupiter.params.provider.EnumSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
-import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Import;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
@@ -39,11 +38,8 @@ import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 import org.springframework.web.context.WebApplicationContext;
 import javax.crypto.spec.SecretKeySpec;
 import java.nio.charset.StandardCharsets;
-import java.time.Clock;
 import java.time.Instant;
-import java.time.ZoneOffset;
 import java.util.List;
-import java.util.Optional;
 
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
@@ -66,7 +62,6 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
         GlobalExceptionHandler.class, NotificationControllerTest.TestSecurityConfiguration.class})
 class NotificationControllerTest {
 
-    private static final Instant NOW = Instant.parse("2026-10-13T14:00:00Z");
 
     @Autowired
     private WebApplicationContext context;
@@ -117,7 +112,8 @@ class NotificationControllerTest {
                 .andExpect(jsonPath("$.content[0].sourceId").value("event-id"))
                 .andExpect(jsonPath("$.content[0].title").value(notification.getTitle()))
                 .andExpect(jsonPath("$.content[0].message").value(notification.getMessage()))
-                .andExpect(jsonPath("$.content[0].read").value(false))
+                .andExpect(jsonPath("$.content[0].read").doesNotExist())
+                .andExpect(jsonPath("$.content[0].readAt").doesNotExist())
                 .andExpect(jsonPath("$.content[0].profileId").doesNotExist())
                 .andExpect(jsonPath("$.content[0].alertKey").doesNotExist())
                 .andExpect(jsonPath("$.hasNext").value(true))
@@ -155,55 +151,8 @@ class NotificationControllerTest {
     }
 
     @Test
-    void marksTheAuthenticatedProfileNotificationAsRead() throws Exception {
-        when(repository.markAsRead(id, 12, NOW)).thenReturn(1L);
-
-        mockMvc.perform(patch("/api/notifications/{id}/read", id).param("profileId", "99")
-                        .header(HttpHeaders.AUTHORIZATION, authorization))
-                .andExpect(status().isNoContent())
-                .andExpect(content().string(""));
-
-        verify(repository).markAsRead(id, 12, NOW);
-    }
-
-    @Test
-    void acceptsRepeatedReadRequests() throws Exception {
-        notification.markAsRead(NOW.minusSeconds(60));
-        when(repository.findByIdAndProfileId(id, 12)).thenReturn(Optional.of(notification));
-
-        mockMvc.perform(patch("/api/notifications/{id}/read", id)
-                        .header(HttpHeaders.AUTHORIZATION, authorization))
-                .andExpect(status().isNoContent());
-    }
-
-    @Test
-    void hidesNotificationsFromOtherProfiles() throws Exception {
-        when(repository.findByIdAndProfileId(id, 13)).thenReturn(Optional.empty());
-
-        mockMvc.perform(patch("/api/notifications/{id}/read", id)
-                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + token("13")))
-                .andExpect(status().isNotFound())
-                .andExpect(jsonPath("$.status").value(404))
-                .andExpect(jsonPath("$.message").value("Notificacao nao encontrada"));
-
-        verify(repository).markAsRead(id, 13, NOW);
-        verify(repository).findByIdAndProfileId(id, 13);
-    }
-
-    @Test
-    void rejectsAnInvalidNotificationId() throws Exception {
-        mockMvc.perform(patch("/api/notifications/invalid/read")
-                        .header(HttpHeaders.AUTHORIZATION, authorization))
-                .andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.message").value("Id de notificacao invalido"));
-
-        verifyNoInteractions(repository);
-    }
-
-    @Test
-    void requiresAuthenticationForBothEndpoints() throws Exception {
+    void requiresAuthenticationForTheNotificationHistory() throws Exception {
         mockMvc.perform(get("/api/notifications")).andExpect(status().isUnauthorized());
-        mockMvc.perform(patch("/api/notifications/{id}/read", id)).andExpect(status().isUnauthorized());
 
         verifyNoInteractions(repository);
     }
@@ -213,9 +162,6 @@ class NotificationControllerTest {
         String invalidAuthorization = "Bearer " + token("invalid");
 
         mockMvc.perform(get("/api/notifications").header(HttpHeaders.AUTHORIZATION, invalidAuthorization))
-                .andExpect(status().isUnauthorized());
-        mockMvc.perform(patch("/api/notifications/{id}/read", id)
-                        .header(HttpHeaders.AUTHORIZATION, invalidAuthorization))
                 .andExpect(status().isUnauthorized());
 
         verifyNoInteractions(repository);
@@ -254,6 +200,14 @@ class NotificationControllerTest {
         verify(repository, times(60)).findByProfileIdOrderByCreatedAtDesc(eq(5010), any(Pageable.class));
     }
 
+    @Test
+    void noLongerExposesTheMarkAsReadRoute() throws Exception {
+        mockMvc.perform(patch("/api/notifications/{id}/read", id)
+                        .header(HttpHeaders.AUTHORIZATION, authorization))
+                .andExpect(status().isNotFound());
+        verifyNoInteractions(repository);
+    }
+
     private String token(String profileId) {
         SecretKeySpec key = new SecretKeySpec("0123456789abcdef0123456789abcdef"
                 .getBytes(StandardCharsets.UTF_8), "HmacSHA256");
@@ -268,10 +222,5 @@ class NotificationControllerTest {
     @TestConfiguration
     @EnableWebSecurity
     static class TestSecurityConfiguration {
-
-        @Bean
-        Clock clock() {
-            return Clock.fixed(NOW, ZoneOffset.UTC);
-        }
     }
 }

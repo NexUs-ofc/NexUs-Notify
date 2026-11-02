@@ -44,7 +44,7 @@ class NotificationMappingTests {
             .append("title", "Evento amanhã")
             .append("message", "Confira os ingredientes do evento.")
             .append("created_at", Date.from(createdAt))
-            .append("read_at", null);
+            .append("read_at", Date.from(createdAt.plusSeconds(60)));
 
         Notification notification = converter.read(Notification.class, document);
 
@@ -56,16 +56,12 @@ class NotificationMappingTests {
         assertThat(notification.getTitle()).isEqualTo("Evento amanhã");
         assertThat(notification.getMessage()).isEqualTo("Confira os ingredientes do evento.");
         assertThat(notification.getCreatedAt()).isEqualTo(createdAt);
-        assertThat(notification.isRead()).isFalse();
     }
 
     @Test
-    void writesFieldsAndPreservesFirstReadTime() {
+    void writesNotificationFieldsWithoutReadState() {
         Notification notification = new Notification(1, NotificationType.PRODUCT_EXPIRING,
             "42", "expiry:one-day", "Produto vencendo", "Confira a validade do produto.");
-        Instant readAt = notification.getCreatedAt().plusSeconds(60);
-        notification.markAsRead(readAt);
-        notification.markAsRead(readAt.plusSeconds(60));
         Document document = new Document();
 
         converter.write(notification, document);
@@ -73,13 +69,13 @@ class NotificationMappingTests {
         assertThat(document).containsEntry("profile_id", 1)
             .containsEntry("type", "PRODUCT_EXPIRING")
             .containsEntry("source_id", "42")
-            .containsEntry("alert_key", "expiry:one-day")
-            .containsEntry("read_at", Date.from(readAt));
+            .containsEntry("alert_key", "expiry:one-day");
         assertThat(document).containsKeys("title", "message", "created_at")
-            .doesNotContainKeys("priority", "is_read", "account_id", "description", "profileId", "readAt");
+            .doesNotContainKeys("priority", "is_read", "account_id", "description", "profileId", "readAt", "read_at");
         Notification restored = converter.read(Notification.class, document);
-        assertThat(restored.isRead()).isTrue();
-        assertThat(restored.getReadAt()).isEqualTo(Instant.ofEpochMilli(readAt.toEpochMilli()));
+        assertThat(restored.getMessage()).isEqualTo(notification.getMessage());
+        assertThat(restored.getCreatedAt()).isEqualTo(Instant.ofEpochMilli(
+                notification.getCreatedAt().toEpochMilli()));
     }
 
     @Test
