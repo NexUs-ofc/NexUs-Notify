@@ -11,7 +11,6 @@ public final class NotificationMapper {
     public static NotificationResponse toResponse(Notification notification) {
         return new NotificationResponse(
                 notification.getId().toHexString(), notification.getType(), notification.getSourceId(),
-                notification.getTitle(), notification.getMessage(), notification.getCreatedAt(),
-                notification.getReadAt(), notification.isRead());
+                notification.getTitle(), notification.getMessage(), notification.getCreatedAt());
     }
 }

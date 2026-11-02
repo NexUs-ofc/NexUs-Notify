@@ -152,7 +152,7 @@ class SecurityConfigurationTest {
     void allowsPreflightFromAConfiguredOrigin() throws Exception {
         mockMvc.perform(options("/test/profile")
                         .header(HttpHeaders.ORIGIN, "https://app.nexus.test")
-                        .header(HttpHeaders.ACCESS_CONTROL_REQUEST_METHOD, "PATCH")
+                        .header(HttpHeaders.ACCESS_CONTROL_REQUEST_METHOD, "PUT")
                         .header(HttpHeaders.ACCESS_CONTROL_REQUEST_HEADERS, "Authorization"))
                 .andExpect(status().isOk())
                 .andExpect(header().string(HttpHeaders.ACCESS_CONTROL_ALLOW_ORIGIN, "https://app.nexus.test"));

@@ -31,9 +31,6 @@ public class Notification {
     @Field("created_at")
     private Instant createdAt;
 
-    @Field("read_at")
-    private Instant readAt;
-
     protected Notification() {}
 
     public Notification(Integer profileId, NotificationType type, String sourceId, String alertKey,
@@ -50,12 +47,6 @@ public class Notification {
         this.title = Objects.requireNonNull(title);
         this.message = Objects.requireNonNull(message);
         this.createdAt = Objects.requireNonNull(createdAt);
-    }
-
-    public void markAsRead(Instant when) {
-        if (readAt == null) {
-            readAt = Objects.requireNonNull(when);
-        }
     }
 
     public ObjectId getId() {
@@ -88,13 +79,5 @@ public class Notification {
 
     public Instant getCreatedAt() {
         return createdAt;
-    }
-
-    public Instant getReadAt() {
-        return readAt;
-    }
-
-    public boolean isRead() {
-        return readAt != null;
     }
 }

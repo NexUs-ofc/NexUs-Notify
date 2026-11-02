@@ -2,10 +2,15 @@ package com.example.nexusnotify.infra.security;
 
 import com.example.nexusnotify.admin.AdminKeyFilter;
 import com.example.nexusnotify.config.properties.AuthProperties;
+import com.example.nexusnotify.ratelimit.InMemoryRateLimiter;
+import com.example.nexusnotify.ratelimit.RateLimitConfiguration;
+import com.example.nexusnotify.ratelimit.RateLimitFilter;
+import com.example.nexusnotify.ratelimit.RateLimitProperties;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.context.annotation.Import;
 import org.springframework.core.annotation.Order;
 import org.springframework.http.HttpMethod;
 import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
@@ -17,6 +22,7 @@ import org.springframework.security.oauth2.jwt.JwtValidators;
 import org.springframework.security.oauth2.jwt.NimbusJwtDecoder;
 import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationConverter;
 import org.springframework.security.oauth2.server.resource.authentication.JwtGrantedAuthoritiesConverter;
+import org.springframework.security.oauth2.server.resource.web.authentication.BearerTokenAuthenticationFilter;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.CorsConfigurationSource;
@@ -29,6 +35,7 @@ import java.util.List;
 
 @Configuration
 @EnableMethodSecurity
+@Import(RateLimitConfiguration.class)
 @EnableConfigurationProperties(AuthProperties.class)
 public class SecurityConfiguration {
 
@@ -53,7 +60,8 @@ public class SecurityConfiguration {
     SecurityFilterChain securityFilterChain(
             HttpSecurity http,
             JwtDecoder decoder,
-            CorsConfigurationSource corsConfigurationSource) throws Exception {
+            CorsConfigurationSource corsConfigurationSource,
+            InMemoryRateLimiter limiter, RateLimitProperties limits) throws Exception {
         JwtGrantedAuthoritiesConverter authorities = new JwtGrantedAuthoritiesConverter();
         authorities.setAuthoritiesClaimName("profile_type");
         authorities.setAuthorityPrefix("ROLE_");
@@ -63,6 +71,7 @@ public class SecurityConfiguration {
         return http.cors(cors -> cors.configurationSource(corsConfigurationSource))
                 .csrf(csrf -> csrf.disable())
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
+                .addFilterAfter(new RateLimitFilter(limiter, limits), BearerTokenAuthenticationFilter.class)
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers("/swagger-ui.html", "/swagger-ui/**",
                                 "/v3/api-docs", "/v3/api-docs/**", "/v3/api-docs.yaml").permitAll()
@@ -81,8 +90,9 @@ public class SecurityConfiguration {
                 .map(String::trim)
                 .filter(origin -> !origin.isEmpty())
                 .toList());
-        configuration.setAllowedMethods(List.of("GET", "PATCH", "PUT", "DELETE", "OPTIONS"));
+        configuration.setAllowedMethods(List.of("GET", "PUT", "DELETE", "OPTIONS"));
         configuration.setAllowedHeaders(List.of("Authorization", "Content-Type", AdminKeyFilter.HEADER));
+        configuration.setExposedHeaders(List.of("Retry-After"));
         configuration.setMaxAge(3600L);
 
         UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
