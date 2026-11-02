@@ -48,7 +48,7 @@ kubectl port-forward service/nexus-notify 8080:80 -n nexus
 
 O Service é `ClusterIP`: o acesso local é por port-forward. Para produção, configure Ingress/Gateway e TLS conforme o cluster. A configuração não presume LoadBalancer de cloud.
 
-Os probes verificam a inicialização e disponibilidade HTTP do processo, não o funcionamento integral das integrações externas. Ajuste limites de CPU/memória a partir de medições reais.
+Startup e liveness usam TCP na porta do processo. Readiness usa o endpoint público `/actuator/health`, que inclui o estado das dependências configuradas. Os subcaminhos de liveness/readiness do Actuator exigem autenticação neste serviço e não são usados como probes. Esses testes não comprovam o funcionamento integral das integrações externas. Ajuste limites de CPU/memória a partir de medições reais.
 
 ## Referências
 
