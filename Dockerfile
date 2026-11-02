@@ -1,32 +1,17 @@
-# ---- Build stage ----
+# syntax=docker/dockerfile:1
 FROM maven:3.9-eclipse-temurin-17 AS build
-
 WORKDIR /workspace
-
-# Cache dependency resolution before copying source
 COPY pom.xml ./
 RUN mvn --batch-mode --no-transfer-progress dependency:go-offline
-
 COPY src ./src
 COPY config ./config
-RUN mvn --batch-mode --no-transfer-progress clean package -DskipTests
+RUN mvn --batch-mode --no-transfer-progress package -DskipTests
 
-
-# ---- Runtime stage ----
 FROM eclipse-temurin:17-jre-jammy AS runtime
-
-RUN groupadd --system nexus \
-    && useradd --system --gid nexus --no-create-home nexus
-
+RUN groupadd --gid 10001 app && useradd --uid 10001 --gid app --no-create-home app
 WORKDIR /app
-
-COPY --from=build --chown=nexus:nexus /workspace/target/*.jar app.jar
-
-# O Notify usa NOTIFY_PORT (default 8082). Discloud/K8s esperam 8080,
-# então o default dentro do container é 8080 (sobrescrevível via env).
+COPY --from=build --chown=10001:10001 /workspace/target/*.jar ./app.jar
 ENV NOTIFY_PORT=8080
 EXPOSE 8080
-
-USER nexus
-
-ENTRYPOINT ["java", "-XX:TieredStopAtLevel=1", "-XX:+UseSerialGC", "-Xshare:auto", "-jar", "/app/app.jar"]
+USER 10001:10001
+ENTRYPOINT ["java", "-jar", "/app/app.jar"]
