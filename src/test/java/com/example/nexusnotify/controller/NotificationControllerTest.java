@@ -47,12 +47,14 @@ import java.util.Optional;
 
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -234,6 +236,22 @@ class NotificationControllerTest {
                 .andExpect(jsonPath("$.content[0].sourceId").value("4"))
                 .andExpect(jsonPath("$.content[0].profileId").doesNotExist())
                 .andExpect(jsonPath("$.content[0].alertKey").doesNotExist());
+    }
+
+    @Test
+    void limitsTheAuthenticatedProfileBeforeQueryingTheRepository() throws Exception {
+        when(repository.findByProfileIdOrderByCreatedAtDesc(eq(5010), any(Pageable.class)))
+                .thenReturn(new SliceImpl<>(List.of()));
+        String bearer = "Bearer " + token("5010");
+        for (int index = 0; index < 60; index++) {
+            mockMvc.perform(get("/api/notifications").header(HttpHeaders.AUTHORIZATION, bearer))
+                    .andExpect(status().isOk());
+        }
+        mockMvc.perform(get("/api/notifications").header(HttpHeaders.AUTHORIZATION, bearer))
+                .andExpect(status().isTooManyRequests())
+                .andExpect(header().string("Retry-After", "60"))
+                .andExpect(jsonPath("$.code").value("RATE_LIMIT_EXCEEDED"));
+        verify(repository, times(60)).findByProfileIdOrderByCreatedAtDesc(eq(5010), any(Pageable.class));
     }
 
     private String token(String profileId) {
