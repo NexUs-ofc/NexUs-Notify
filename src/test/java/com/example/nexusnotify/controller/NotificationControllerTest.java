@@ -5,6 +5,7 @@ import com.example.nexusnotify.domain.NotificationType;
 import com.example.nexusnotify.exception.GlobalExceptionHandler;
 import com.example.nexusnotify.infra.repository.NotificationRepository;
 import com.example.nexusnotify.infra.security.SecurityConfiguration;
+import com.example.nexusnotify.ratelimit.RateLimitTestConfiguration;
 import com.example.nexusnotify.service.NotificationService;
 import com.example.nexusnotify.util.CurrentProfileResolver;
 import com.nimbusds.jose.jwk.source.ImmutableSecret;
@@ -38,8 +39,10 @@ import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 import org.springframework.web.context.WebApplicationContext;
 import javax.crypto.spec.SecretKeySpec;
 import java.nio.charset.StandardCharsets;
+import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
+import java.util.concurrent.atomic.AtomicLong;
 
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
@@ -59,12 +62,16 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
     "app.auth.jwt-secret-base64=MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY="
 })
 @Import({SecurityConfiguration.class, CurrentProfileResolver.class, NotificationService.class,
-        GlobalExceptionHandler.class, NotificationControllerTest.TestSecurityConfiguration.class})
+        GlobalExceptionHandler.class, NotificationControllerTest.TestSecurityConfiguration.class,
+        RateLimitTestConfiguration.class})
 class NotificationControllerTest {
 
 
     @Autowired
     private WebApplicationContext context;
+
+    @Autowired
+    private AtomicLong rateLimitNanoTime;
 
     @MockitoBean
     private NotificationRepository repository;
@@ -76,6 +83,7 @@ class NotificationControllerTest {
 
     @BeforeEach
     void setUp() {
+        rateLimitNanoTime.set(0);
         mockMvc = MockMvcBuilders.webAppContextSetup(context)
                 .addFilters(context.getBean(FilterChainProxy.class)).build();
         id = new ObjectId();
@@ -197,7 +205,15 @@ class NotificationControllerTest {
                 .andExpect(status().isTooManyRequests())
                 .andExpect(header().string("Retry-After", "60"))
                 .andExpect(jsonPath("$.code").value("RATE_LIMIT_EXCEEDED"));
+        rateLimitNanoTime.set(Duration.ofMillis(1100).toNanos());
+        mockMvc.perform(get("/api/notifications").header(HttpHeaders.AUTHORIZATION, bearer))
+                .andExpect(status().isTooManyRequests())
+                .andExpect(header().string("Retry-After", "59"));
         verify(repository, times(60)).findByProfileIdOrderByCreatedAtDesc(eq(5010), any(Pageable.class));
+        rateLimitNanoTime.set(Duration.ofSeconds(60).toNanos());
+        mockMvc.perform(get("/api/notifications").header(HttpHeaders.AUTHORIZATION, bearer))
+                .andExpect(status().isOk());
+        verify(repository, times(61)).findByProfileIdOrderByCreatedAtDesc(eq(5010), any(Pageable.class));
     }
 
     @Test

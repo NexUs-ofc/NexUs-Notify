@@ -20,6 +20,8 @@ import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 import org.springframework.web.context.WebApplicationContext;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.json.JsonMapper;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.time.Clock;
@@ -27,6 +29,7 @@ import java.time.Duration;
 import java.time.ZoneId;
 import java.util.List;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
@@ -134,6 +137,57 @@ class NexUsNotifyApplicationTests {
     void loadsMongoSettingsFromBootFourNamespace() {
         assertEquals("mongodb://localhost:27017/notify_test", mongoProperties.getUri());
         assertEquals("notify_test", mongoProperties.getDatabase());
+    }
+
+    @Test
+    void describesAllOperationsAndDocumentsTheAdministrationKeySeparately() throws Exception {
+        JsonNode document = apiDocument();
+        document.path("paths").properties().forEach(path -> path.getValue().properties().forEach(method -> {
+            JsonNode operation = method.getValue();
+            assertThat(operation.path("summary").asText()).as(path.getKey()).isNotBlank();
+            assertThat(operation.path("description").asText()).as(path.getKey()).isNotBlank();
+            operation.path("parameters").forEach(parameter ->
+                    assertThat(parameter.path("description").asText())
+                            .as(parameter.path("name").asText()).isNotBlank());
+        }));
+        JsonNode admin = document.at("/paths/~1admin~1session/get/security");
+        assertThat(admin.get(0).has("AdminKeyAuth")).isTrue();
+        assertThat(admin.get(0).has("BearerAuth")).isFalse();
+        assertReferencesResolve(document, document);
+    }
+
+    @Test
+    void documentsValidationPaginationAndInstallationResponses() throws Exception {
+        JsonNode document = apiDocument();
+        JsonNode history = document.at("/paths/~1api~1notifications/get/responses");
+        assertThat(history.has("200")).isTrue();
+        assertThat(history.has("400")).isTrue();
+        assertThat(history.has("401")).isTrue();
+        assertThat(history.has("429")).isTrue();
+        assertThat(history.at("/400/content/application~1json/schema/$ref").asText())
+                .isEqualTo("#/components/schemas/ApiError");
+        assertThat(document.at("/components/schemas/ApiError/properties/message").isMissingNode()).isFalse();
+        assertThat(document.at("/paths/~1api~1push~1installations~1{id}/delete/responses").has("204")).isTrue();
+        assertThat(document.at("/components/schemas/RegisterPushInstallationRequest/properties/installationId/pattern")
+                .asText()).isEqualTo("[A-Za-z0-9_-]{1,256}");
+    }
+
+    private JsonNode apiDocument() throws Exception {
+        MockMvc mvc = MockMvcBuilders.webAppContextSetup(webContext)
+                .addFilters(context.getBean(FilterChainProxy.class)).build();
+        String body = mvc.perform(get("/v3/api-docs")).andExpect(status().isOk())
+                .andReturn().getResponse().getContentAsString();
+        return JsonMapper.builder().build().readTree(body);
+    }
+
+    private void assertReferencesResolve(JsonNode root, JsonNode node) {
+        if (node.has("$ref")) {
+            String reference = node.path("$ref").asText();
+            if (reference.startsWith("#/")) {
+                assertThat(root.at(reference.substring(1)).isMissingNode()).as(reference).isFalse();
+            }
+        }
+        node.forEach(child -> assertReferencesResolve(root, child));
     }
 
     @Test
