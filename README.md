@@ -27,7 +27,6 @@ O serviço consulta candidatos no NexUs Core, aplica as regras de cada alerta e 
 - [Estrutura do projeto](#estrutura-do-projeto)
 - [Considerações operacionais](#considerações-operacionais)
 - [Solução de problemas](#solução-de-problemas)
-- [Documentação complementar](#documentação-complementar)
 - [Licença](#licença)
 
 ## Visão geral
@@ -146,7 +145,48 @@ Prepare previamente as collections e os índices na base configurada em `MONGO_D
 | `idx_push_installation_profile_status` | `push_installations` | Busca de instalações ativas do perfil |
 | `idx_new_store_suggestion_profile_presented` | `new_store_suggestions` | Busca de novidades pendentes |
 
-Os comandos e os formatos dos documentos estão nos guias de [instalações push](docs/push-installations.md) e [lojas próximas](docs/nearby-stores.md).
+Execute os comandos pelo `mongosh`, substituindo o nome da base pelo valor de `MONGO_DB`:
+
+```javascript
+db = db.getSiblingDB("NOME_DA_BASE_CONFIGURADA_EM_MONGO_DB");
+
+for (const name of [
+  "notifications",
+  "push_installations",
+  "nearby_store_rotations",
+  "new_store_suggestions",
+  "new_store_discovery_state"
+]) {
+  if (!db.getCollectionNames().includes(name)) {
+    db.createCollection(name);
+  }
+}
+
+db.notifications.createIndex(
+  { profile_id: 1, type: 1, source_id: 1, alert_key: 1 },
+  { name: "uq_notification_alert", unique: true }
+);
+db.notifications.createIndex(
+  { profile_id: 1, created_at: -1 },
+  { name: "idx_notification_profile_created" }
+);
+db.push_installations.createIndex(
+  { installation_id: 1 },
+  { name: "uq_push_installation_id", unique: true }
+);
+db.push_installations.createIndex(
+  { profile_id: 1, status: 1 },
+  { name: "idx_push_installation_profile_status" }
+);
+db.new_store_suggestions.createIndex(
+  { profile_id: 1, presented_at: 1 },
+  { name: "idx_new_store_suggestion_profile_presented" }
+);
+```
+
+As collections de estado também utilizam a unicidade de `_id`. Os comandos não apagam documentos; índices já existentes com as mesmas definições são preservados. Duplicações ou definições conflitantes precisam ser verificadas antes da criação dos índices únicos.
+
+Se houver validação de documentos em `push_installations`, permita `profile_id=null` após revogação, os campos de desativação nulos e os estados `ACTIVE`, `REVOKED`, `INVALID` e `STALE`.
 
 O fluxo de lojas exige replica set ou cluster com suporte a transações, mesmo com o push desabilitado. Um MongoDB standalone pode atender aos fluxos de produtos, eventos e listas quando `NOTIFY_NEARBY_STORES_ENABLED=false`.
 
@@ -363,7 +403,7 @@ Encerre a execução:
 docker stop nexus-notify
 ```
 
-A imagem final utiliza Java 17 e um usuário sem privilégios de root. Credenciais são fornecidas no ambiente de execução. O projeto não inclui `docker-compose.yml`; o procedimento completo de Kubernetes está no [guia de containers](docs/containers.md).
+A imagem final utiliza Java 17 e um usuário sem privilégios de root. Credenciais são fornecidas no ambiente de execução. O projeto não inclui `docker-compose.yml`; a implantação em cluster está descrita em [Containers e Kubernetes portáteis](#containers-e-kubernetes-portáteis).
 
 ## Autenticação e autorização
 
@@ -563,7 +603,7 @@ Substitua os tokens e identificadores por valores existentes no ambiente. Em Pow
 
 A descoberta mantém progresso persistido para recuperar o intervalo desde a última consulta concluída. O Notify não consulta GPS nem executa geocodificação; recebe candidatos calculados pelo Core.
 
-Os detalhes de ciclos, concorrência e preparação do banco estão no [guia de lojas próximas](docs/nearby-stores.md).
+A frequência e o ciclo são persistidos por perfil. A atualização da rotação, a inserção do aviso e o consumo da pendência seguem as garantias descritas em [Persistência e deduplicação](#persistência-e-deduplicação).
 
 ### Instalações
 
@@ -632,7 +672,7 @@ No checkout Mobile usado na revisão:
 - O toque em produto leva à aba de estoque; lojas abrem o detalhe pelo Core.
 - O detalhe de evento tenta `GET /api/events/{id}`, ausente no Core local revisado.
 
-Essas observações descrevem os checkouts revisados, sem afirmar qual versão está publicada no aparelho ou nos serviços. Contrato e limites estão no [guia de envio de push](docs/push-delivery.md).
+Essas observações descrevem os checkouts revisados, sem afirmar qual versão está publicada no aparelho ou nos serviços. A validação de recebimento é descrita em [Validação integrada de push e lojas](#validação-integrada-de-push-e-lojas).
 
 ## Persistência e deduplicação
 
@@ -733,7 +773,7 @@ O serviço coleta as amostras em memória; não depende de um servidor Prometheu
 
 No timer, `COUNT` representa execuções concluídas, `TOTAL_TIME` é o acumulado em segundos e `MAX` é a maior duração na janela de medição. Contadores de negócio aparecem após o primeiro registro correspondente. Os valores são locais à instância e reiniciam com o processo.
 
-Detalhes dos campos e das contas estão no [guia do painel administrativo](docs/painel-admin.md). Os logs de geração registram início, conclusão, quantidade criada, duração e falhas; tokens e conteúdo dos avisos não são registrados deliberadamente nesses logs.
+Os logs de geração registram início, conclusão, quantidade criada, duração e falhas; tokens e conteúdo dos avisos não são registrados deliberadamente nesses logs.
 
 ## Erros e respostas HTTP
 
@@ -803,7 +843,7 @@ docker run --name nexus-notify-mongo-test -d -p 127.0.0.1:27017:27017 mongo:8.2
 
 Os testes utilizam uma base temporária exclusiva e a removem ao terminar. Sem essa propriedade, os testes condicionais de persistência MongoDB não são executados.
 
-Os testes padrão de transação de lojas utilizam sessões simuladas. Para validar esse fluxo no banco real, utilize replica set ou cluster e o roteiro de [lojas próximas](docs/nearby-stores.md).
+Os testes padrão de transação de lojas utilizam sessões simuladas. A confirmação do fluxo completo exige MongoDB com suporte a transações, conforme a [validação integrada](#validação-integrada-de-push-e-lojas).
 
 ### Verificação de estilo
 
@@ -827,7 +867,19 @@ Com a instância MongoDB de testes disponível:
 ./mvnw clean verify checkstyle:check -Dmongodb.test.uri=mongodb://localhost:27017
 ```
 
-Os testes automatizados não substituem a confirmação de recebimento no Android. Para validar entrega, siga o roteiro integrado do [guia de envio de push](docs/push-delivery.md).
+### Validação integrada de push e lojas
+
+Os testes automatizados não substituem a confirmação de recebimento no Android. Para validar o fluxo completo, utilize uma base isolada com os índices preparados, Core e Auth acessíveis e um aparelho registrado no mesmo projeto Firebase:
+
+1. Habilite o envio com `NOTIFY_PUSH_ENABLED=true` e configure as credenciais do projeto.
+2. Cadastre um FID real pelo PUT de instalações, com o JWT do perfil. Um identificador fictício pode testar a validação sintática, mas não confirma entrega.
+3. Prepare no Core um produto desse perfil com validade que corresponda a uma antecedência configurada, como o dia seguinte à execução.
+4. No ambiente de teste, use `NOTIFY_SCHEDULER_CRON=0 * * * * *` e mantenha o agendador habilitado para executar a cada minuto. Ao concluir, restaure o cron utilizado pelo ambiente.
+5. Confira o aviso persistido, o resultado de envio nos logs e a exibição no aparelho. A aceitação no Firebase, isoladamente, não prova exibição.
+6. Repita a geração: o mesmo alerta não deve ser inserido nem enviado novamente.
+7. Verifique múltiplos aparelhos, ausência de instalações ativas, logout, troca de perfil e mensagens que já estavam em trânsito.
+
+Para validar lojas, habilite o fluxo em replica set ou cluster. Confira a atualização conjunta de `nearby_store_rotations`, `notifications` e das pendências, além da preservação do intervalo em execuções repetidas. Novidades devem respeitar o mesmo intervalo e ter prioridade quando elegíveis.
 
 ## Build e implantação
 
@@ -864,13 +916,37 @@ O workflow `containers.yml` valida a imagem e os manifests sem publicar imagens 
 
 Os manifests ficam em `k8s/`, no namespace `nexus`. A imagem pode ser substituída por uma de qualquer registry. As variáveis são fornecidas pelo Secret `nexus-notify-secret`.
 
-Para conferir a renderização:
+Prepare um cluster acessível pelo kubeconfig e disponibilize a imagem:
+
+1. Compile e publique a imagem em um registry sob seu controle, ajustando `images` em `k8s/kustomization.yaml` para o endereço e a tag publicados.
+2. Para um registry privado, configure `imagePullSecrets` no cluster.
+3. Em Kind ou Minikube, também é possível carregar `nexus-notify:local` nos nós com `kind load docker-image nexus-notify:local` ou `minikube image load nexus-notify:local`.
+
+Crie o namespace e forneça as variáveis pelo arquivo `.env` local:
+
+```bash
+kubectl apply -f k8s/namespace.yaml
+kubectl create secret generic nexus-notify-secret --namespace nexus --from-env-file=.env --dry-run=client -o yaml | kubectl apply -f -
+```
+
+O arquivo não deve ser versionado. MongoDB e Core precisam estar acessíveis a partir do cluster; `localhost` dentro do Pod aponta para o próprio container.
+
+Confira a renderização e aplique os manifests:
 
 ```bash
 kubectl kustomize k8s
+kubectl apply -k k8s
+kubectl rollout status deployment/nexus-notify -n nexus --timeout=5m
+kubectl port-forward service/nexus-notify 8080:80 -n nexus
 ```
 
-O Service é `ClusterIP`. O acesso externo, TLS, credenciais de registry e configuração das dependências devem ser preparados conforme o cluster. As instruções de imagem, Secret, implantação e port-forward estão no [guia de containers e Kubernetes](docs/containers.md).
+O Service é `ClusterIP`; o port-forward permite acesso local em `http://localhost:8080`. Para produção, configure Ingress/Gateway e TLS conforme o cluster. A implantação não depende de um LoadBalancer ou registry específico.
+
+Após atualizar o Secret, reinicie o workload para recarregar as variáveis:
+
+```bash
+kubectl rollout restart deployment/nexus-notify -n nexus
+```
 
 ### Discloud
 
@@ -892,7 +968,6 @@ NexUs-Notify/
 ├── .github/workflows/        # Testes, build, containers e implantação
 ├── .mvn/                     # Maven Wrapper
 ├── config/                   # Checkstyle
-├── docs/                     # Guias operacionais e revisão de integrações
 ├── k8s/                      # Manifestos Kubernetes e Kustomize
 ├── src/
 │   ├── main/
@@ -956,15 +1031,6 @@ NexUs-Notify/
 | `429` | Aguarde o tempo indicado em `Retry-After` e confira a cota do perfil |
 | API inacessível no container | Confira a porta definida por `NOTIFY_PORT` e o mapeamento publicado pelo Docker |
 | Testes MongoDB ignorados | Informe `mongodb.test.uri` e disponibilize a instância de testes |
-
-## Documentação complementar
-
-- [Instalações push](docs/push-installations.md): schema, índices e regras de cadastro e revogação.
-- [Envio de push](docs/push-delivery.md): payload, resultados, limites e roteiro integrado.
-- [Lojas próximas](docs/nearby-stores.md): ciclos, descoberta, transações e recuperação de progresso.
-- [Painel administrativo](docs/painel-admin.md): contratos e cálculo das métricas.
-- [Containers e Kubernetes](docs/containers.md): imagem, credenciais e implantação portátil.
-- [Revisão das integrações](docs/README.md): inventário e decisões da revisão do serviço.
 
 ## Licença
 
