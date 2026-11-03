@@ -1,6 +1,8 @@
 # NexUs-Notify
 
-API de notificações do NexUs. Consulta candidatos no Core, aplica as regras de produtos, eventos, listas de compras e lojas próximas e salva os avisos no MongoDB. Com o push habilitado, tenta enviar os novos avisos pelo Firebase para as instalações ativas do perfil. O mobile consulta o histórico e registra a leitura pela API.
+API de notificações do NexUs. Consulta candidatos no Core, aplica as regras de produtos, eventos, listas de compras e lojas próximas e salva os avisos no MongoDB. Com o push habilitado, tenta enviar os novos avisos pelo Firebase para as instalações ativas do perfil. O Mobile registra e desvincula instalações push e implementa o recebimento e a exibição dos tipos suportados. A API de histórico está disponível, mas não foi encontrado consumo pelas telas ou pelo fluxo de push do Mobile no checkout revisado. O serviço não mantém controle de leitura das notificações.
+
+O inventário das integrações e as decisões da revisão estão no [README de documentação](docs/README.md).
 
 ## Execução local
 
@@ -84,9 +86,9 @@ Ao implantar pela integração com GitHub, cadastre as três variáveis na seç�
 
 Referências: [Firebase Admin SDK](https://firebase.google.com/docs/admin/setup) e [variáveis na integração GitHub do Discloud](https://docs.discloud.com/en/api-and-integrations/github-integration).
 
-### Limites desta etapa e integração futura com o mobile
+### Limites da integração com Firebase e Mobile
 
-Inicializar o SDK verifica localmente a credencial e o projeto; não faz uma chamada remota para confirmar se a chave foi revogada, se o papel IAM permite enviar ou se a API FCM V1 está habilitada. O health atual também não valida o Firebase. Essas verificações exigem um teste real quando o envio estiver implementado.
+Inicializar o SDK verifica localmente a credencial e o projeto; não faz uma chamada remota para confirmar se a chave foi revogada, se o papel IAM permite enviar ou se a API FCM V1 está habilitada. O health atual também não valida o Firebase. Essas verificações exigem um teste integrado real de envio.
 
 Após salvar um aviso novo, a API busca as instalações ativas do perfil, confere o vínculo atual e tenta enviar uma mensagem de dados pelo FID. Falhas de envio não removem o aviso do histórico nem interrompem os outros destinatários. Não há fila persistida nem recuperação de envios após falhas ou reinícios. O fluxo, os erros tratados e o contrato Android estão em [Envio de push](docs/push-delivery.md).
 
@@ -106,11 +108,11 @@ Lojas usam os endpoints internos `/internal/notifications/nearby-stores` e `/int
 
 O índice único de perfil, tipo, origem e chave do alerta protege a persistência contra duplicações. Cada antecedência de produto/evento/lista tem sua própria chave. O agendamento precisa do serviço em execução; execuções perdidas de produtos/eventos/listas ainda não são recuperadas automaticamente. A descoberta de lojas novas mantém uma data de progresso persistida e recupera o intervalo desde a última consulta concluída.
 
-O envio é síncrono durante a geração, somente para avisos recém-inseridos e quando `NOTIFY_PUSH_ENABLED=true`. Repetir a geração não reenvia avisos já existentes, mesmo que uma tentativa anterior tenha falhado. Sem instalações ativas, o aviso permanece apenas no histórico. O Android ainda precisa implementar o recebimento e a exibição das mensagens de dados.
+O envio é síncrono durante a geração, somente para avisos recém-inseridos e quando `NOTIFY_PUSH_ENABLED=true`. Repetir a geração não reenvia avisos já existentes, mesmo que uma tentativa anterior tenha falhado. Sem instalações ativas, o aviso permanece apenas no histórico. O Mobile analisado já recebe mensagens de dados, confere a sessão, evita exibições duplicadas e publica notificações de produtos, eventos e lojas.
 
-Listas usam `/internal/notifications/shopping-lists` do Core e mantêm configuração própria `shopping-list-days-before`. O indicador `completed` muda apenas o texto; listas completas continuam elegíveis e listas sem data são ignoradas.
+Listas usam `/internal/notifications/shopping-lists` do Core e mantêm configuração própria `shopping-list-days-before`. O indicador `completed` muda apenas o texto; listas completas continuam elegíveis e listas sem data são ignoradas. O Notify gera `SHOPPING_LIST_REMINDER`, mas o Mobile analisado ainda não aceita esse tipo no recebimento de push.
 
-Eventos da IA continuam usando `/internal/notifications/events`, independentemente das listas. O Core precisa incluir a restauração dessa rota de leitura da collection `events`; Core e IA devem apontar para a mesma base MongoDB.
+Eventos da IA continuam usando `/internal/notifications/events`, independentemente das listas. Essa rota de leitura da collection `events` já está implementada no Core local analisado; Core e IA devem apontar para a mesma base MongoDB. A versão publicada do Core não foi verificada nesta revisão.
 
 ## Swagger / OpenAPI
 
@@ -127,7 +129,6 @@ As rotas de notificações exigem `Authorization: Bearer <JWT_DO_AUTH>`. O perfi
 | Método e rota | Resultado |
 | --- | --- |
 | `GET /api/notifications?page=0&size=20` | Lista do perfil autenticado, ordenada por criação decrescente e ID decrescente em caso de empate. |
-| `PATCH /api/notifications/{id}/read` | Marca um aviso do perfil como lido, com resposta `204`. Repetições preservam a primeira leitura. |
 
 `page` começa em zero e `size` aceita valores de 1 a 100. A resposta da lista contém `content` e `hasNext`, sem contagem total.
 
@@ -140,9 +141,7 @@ As rotas de notificações exigem `Authorization: Bearer <JWT_DO_AUTH>`. O perfi
       "sourceId": "45",
       "title": "Produto próximo do vencimento",
       "message": "O produto Leite vence amanhã.",
-      "createdAt": "2026-10-14T14:00:00Z",
-      "readAt": null,
-      "read": false
+      "createdAt": "2026-10-14T14:00:00Z"
     }
   ],
   "hasNext": false
@@ -151,10 +150,9 @@ As rotas de notificações exigem `Authorization: Bearer <JWT_DO_AUTH>`. O perfi
 
 ```sh
 curl -H 'Authorization: Bearer <JWT_DO_AUTH>' 'http://localhost:8082/api/notifications?page=0&size=20'
-curl -X PATCH -H 'Authorization: Bearer <JWT_DO_AUTH>' http://localhost:8082/api/notifications/670c00000000000000000001/read
 ```
 
-Parâmetros ou IDs inválidos retornam `400`. Um aviso ausente ou pertencente a outro perfil retorna `404`. Falhas de autenticação retornam `401`.
+Parâmetros de paginação inválidos retornam `400`. Falhas de autenticação retornam `401`. A listagem não inclui estado ou data de leitura, e não há endpoint para marcar um aviso como lido.
 
 ## Cadastro de instalações push
 
@@ -173,7 +171,7 @@ Corpo do PUT:
 
 O FID é único na collection `push_installations`. Chamadas repetidas preservam o ID e a data original de criação. Uma instalação pode mudar de perfil, e um perfil pode ter várias instalações. No logout, o cadastro recebe `profile_id=null`, `status=REVOKED` e `disabled_reason=LOGOUT`. O DELETE repetido, sem vínculo ou de outro perfil retorna `204` sem alterar o documento. Um ID interno inválido ou um FID inválido retorna `400`; ausência ou falha de autenticação retorna `401`.
 
-Consulte [Cadastro de instalações push](docs/push-installations.md) para o esquema da collection, as regras de atualização, exemplos de requisição e um roteiro de teste manual. O envio pelo Firebase está descrito em [Envio de push](docs/push-delivery.md); a integração Android continua pendente.
+Consulte [Cadastro de instalações push](docs/push-installations.md) para o esquema da collection, as regras de atualização, exemplos de requisição e um roteiro de teste manual. O envio pelo Firebase, o contrato Android e as limitações dos tipos suportados estão em [Envio de push](docs/push-delivery.md).
 
 ## Health, métricas e painel do administrador
 

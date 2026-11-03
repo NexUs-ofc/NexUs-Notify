@@ -27,7 +27,7 @@ O `activeSnapshot` é somente um filtro de consulta, não um documento salvo. O 
 
 `updated_at` é uma data BSON com precisão de milissegundos, não uma versão monotônica de sessão. Essa proteção não elimina todas as condições de corrida. Alterações na mesma precisão temporal podem não ser distinguíveis; uma troca após a conferência também pode ocorrer durante a chamada externa. Um logout não consegue cancelar uma mensagem já aceita pelo Firebase. A verificação da sessão no Android continua necessária.
 
-Os logs desta implementação não incluem FID, título, corpo, credenciais ou o texto bruto das exceções. A leitura continua sendo registrada exclusivamente pelo endpoint de leitura.
+Os logs desta implementação não incluem FID, título, corpo, credenciais ou o texto bruto das exceções. O Notify não mantém estado de leitura nem oferece endpoint para registrá-la. O recebimento e a abertura de um push no Mobile não atualizam o histórico do serviço.
 
 ## Limites aceitos nesta versão
 
@@ -35,7 +35,7 @@ Não há fila persistente, worker, agenda de novas tentativas ou recuperação a
 
 O cadastro `INVALID` é reativado pelo próximo PUT autenticado do mesmo FID. Não há detecção imediata de desinstalação nem rotina de expiração por inatividade; `STALE` segue reservado.
 
-## Contrato Android futuro
+## Contrato Android
 
 Mensagem de dados, com todos os valores como strings:
 
@@ -50,9 +50,11 @@ Mensagem de dados, com todos os valores como strings:
 }
 ```
 
-Não há payload `notification` de exibição automática. O aplicativo deve implementar o recebimento da mensagem de dados, conferir a sessão e só então exibir o aviso. Deve descartar mensagens sem sessão ou com outro `profileId`, evitar duplicações por `notificationId` e consultar a API para obter o estado atualizado. Mensagens do mesmo perfil entre sessões diferentes não são diferenciadas por este contrato; se necessário, isso exigirá uma versão de vínculo compartilhada entre cliente e API.
+Não há payload `notification` de exibição automática. No Mobile analisado, `CerisMessagingService` recebe os dados e `PushMessageHandler` confere a sessão antes da publicação. Mensagens sem sessão ou com outro `profileId` são descartadas, e `notificationId` é usado para evitar exibições duplicadas. Não há consulta HTTP nesse callback. Mensagens do mesmo perfil entre sessões diferentes não são diferenciadas pelo payload; se necessário, isso exigirá uma versão de vínculo compartilhada entre cliente e API.
 
-Os tipos `NEARBY_STORE` e `NEW_NEARBY_STORE` usam o mesmo payload. Neles, `sourceId` é o ID da loja no Core. O mobile deve reconhecer os tipos e pode usar esse ID para abrir a loja. O estado de ciclos e pendências permanece no servidor. A sugestão conta para o intervalo quando é gravada no histórico, mesmo sem instalações ativas ou quando o envio falha.
+O parser do Mobile aceita `PRODUCT_EXPIRING`, `UPCOMING_EVENT`, `NEARBY_STORE` e `NEW_NEARBY_STORE`. O tipo `SHOPPING_LIST_REMINDER`, gerado pelo Notify, ainda é descartado no recebimento. Essa incompatibilidade está registrada na [revisão das integrações](README.md) e não foi alterada nesta limpeza.
+
+Os tipos `NEARBY_STORE` e `NEW_NEARBY_STORE` usam o mesmo payload. Neles, `sourceId` é o ID da loja no Core, usado pelo Mobile para abrir o detalhe da loja. Produtos levam à aba de estoque; eventos tentam abrir um detalhe por `GET /api/events/{id}`, rota ausente no Core local analisado. O estado de ciclos e pendências permanece no servidor. A sugestão conta para o intervalo quando é gravada no histórico, mesmo sem instalações ativas ou quando o envio falha.
 
 O envio usa prioridade Android alta para avisos visíveis ao usuário e TTL de uma hora no FCM. O mobile deve exibir os avisos elegíveis prontamente; prioridade alta sem conteúdo visível pode ser rebaixada pelo FCM. Permissão Android, canal de notificação e execução em segundo plano precisam ser tratados e testados no mobile. O TTL não confirma entrega nem substitui a data de criação do histórico.
 
@@ -72,6 +74,6 @@ Para o teste integrado, use uma base isolada com os índices preparados, Core e 
 6. Repita a geração: o mesmo aviso não deve ser inserido ou enviado outra vez.
 7. Teste múltiplos aparelhos, ausência de aparelhos ativos, logout e troca de perfil. Valide também mensagens em trânsito no Android após o logout.
 
-Sem o recebimento Android implementado, só é possível validar a aceitação no FCM; a exibição depende da próxima etapa do mobile.
+O recebimento Android já está implementado para os quatro tipos aceitos pelo parser. A confirmação de exibição exige executar o teste no dispositivo com a versão e as configurações correspondentes; um log de aceitação no FCM não substitui essa verificação.
 
 Referências: [envio por FID](https://firebase.google.com/docs/reference/admin/java/reference/com/google/firebase/messaging/Message.Builder), [erros do FCM](https://firebase.google.com/docs/cloud-messaging/error-codes) e [prioridade Android](https://firebase.google.com/docs/cloud-messaging/android-message-priority).

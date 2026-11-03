@@ -121,4 +121,4 @@ No logout, deve chamar o DELETE antes de descartar o JWT. Uma falha de rede não
 
 Quando o FID mudar, o novo cadastro não identifica automaticamente qual instalação antiga foi substituída. O registro antigo pode ser invalidado se um envio retornar `UNREGISTERED`; a expiração por inatividade continua sendo uma etapa futura.
 
-O envio busca os cadastros ativos do perfil e confere o vínculo atual antes de cada tentativa. Essa conferência não cancela mensagens já em trânsito: o Android deve conferir `profileId` contra a sessão atual antes de exibir o conteúdo. O contrato e os limites estão em [Envio de push](push-delivery.md). A implementação Android continua pendente.
+O envio busca os cadastros ativos do perfil e confere o vínculo atual antes de cada tentativa. Essa conferência não cancela mensagens já em trânsito: o Mobile analisado também confere `profileId` contra a sessão atual antes de exibir o conteúdo. O contrato, os tipos suportados e os limites estão em [Envio de push](push-delivery.md).
