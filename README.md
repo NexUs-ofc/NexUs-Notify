@@ -228,3 +228,7 @@ Em Linux ou macOS:
 ```
 
 Os testes usam Core, Mongo e Firebase simulados e desabilitam o job. Incluem seleção e ciclos de lojas, frequência compartilhada, recuperação da descoberta, configuração transacional, commit/abort de sessão Mongo simulada, contratos HTTP e isolamento dos fluxos. Para validar transações no banco real, prepare um replica set ou cluster e siga o roteiro de [Lojas próximas](docs/nearby-stores.md).
+
+## Containers e Kubernetes
+
+Consulte o [guia de containers e Kubernetes](docs/containers.md) para build, configuração e execução em qualquer cluster.
